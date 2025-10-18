@@ -19,7 +19,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
   IconData? _selectedIcon;
 
   // A list of selectable icons for the user.
-  final List<IconData> _selectableIcons = iconMap.values.toList();
+  final List<IconData> _selectableIcons = publicIconMap.values.toList();
 
   @override
   void dispose() {
@@ -28,12 +28,31 @@ class _AddItemDialogState extends State<AddItemDialog> {
     super.dispose();
   }
 
+  String? extractGoogleDocId(String url) {
+    // The document ID is a long string of characters and is typically
+    // found after "/d/" and before the next "/".
+    // This RegExp captures that group of characters.
+    final regExp = RegExp(r'/document/d/([a-zA-Z0-9-_]+)');
+
+    final match = regExp.firstMatch(url);
+
+    // group(0) is the full match (e.g., "/document/d/12345/"),
+    // group(1) is the first captured group (e.g., "12345").
+    if (match != null && match.groupCount >= 1) {
+      return match.group(1);
+    }
+
+    return null;
+  }
+
   void _submit() {
     final name = _nameController.text;
     final url = _urlController.text;
     // Ensure a name has been entered and an icon has been selected
     if (name.isNotEmpty && url.isNotEmpty && _selectedIcon != null) {
-      final newItem = CardItem(name: name, icon: _selectedIcon!);
+      final docId = extractGoogleDocId(url);
+      if (docId == null) return;
+      final newItem = CardItem(name: name, icon: _selectedIcon!, docId: docId);
       // Pop the dialog and return the new item
       Navigator.of(context).pop(newItem);
     }
@@ -66,7 +85,6 @@ class _AddItemDialogState extends State<AddItemDialog> {
                 20 +
                 (10 * (mainAxisCount - 1)) +
                 (mainAxisCount * crossAxisWidth);
-
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,

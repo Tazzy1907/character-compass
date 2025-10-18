@@ -6,14 +6,16 @@ import '../assets/svgs.dart';
 class CardItem {
   final String name;
   final IconData icon;
+  final String docId;
 
-  CardItem({required this.name, required this.icon});
+  CardItem({required this.name, required this.icon, required this.docId});
 
   // Factory constructor to create a CardItem from JSON.
   factory CardItem.fromJson(Map<String, dynamic> json) {
     return CardItem(
       name: json['name'] as String? ?? 'Unnamed',
-      icon: _mapStringToIcon(json['icon'] as String? ?? 'question'),
+      icon: _mapStringToIcon(json['icon'] as String? ?? 'error'),
+      docId: json['url'] as String? ?? '',
     );
   }
 }

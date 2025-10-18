@@ -42,8 +42,7 @@ class ApiService {
       return _getMockData();
     }
 
-    /* // UNCOMMENT THIS BLOCK FOR A REAL API CALL
-    const apiUrl = 'https://your-api-domain.com/api/get_books'; 
+    const apiUrl = 'https://your-api-domain.com/api/get_books';
     try {
       final response = await http.get(Uri.parse(apiUrl));
 
@@ -56,7 +55,5 @@ class ApiService {
     } catch (e) {
       throw Exception('Failed to connect to the API: $e');
     }
-    */
-    return [];
   }
 }

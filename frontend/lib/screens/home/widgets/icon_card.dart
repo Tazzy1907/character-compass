@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:frontend/style.dart';
 import '../../../models/card_item.dart';
+import '../../book/book_screen.dart';
 
 // The card widget is now in its own file.
 class IconCard extends StatelessWidget {
@@ -18,9 +19,14 @@ class IconCard extends StatelessWidget {
       child: InkWell(
         onTap: () {
           print("Tapped on ${item.name}");
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text("Tapped on ${item.name}")));
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              // Create an instance of DetailPage and
+              // pass the value to its 'message' constructor parameter
+              builder: (context) => BookScreen(bookId: item.docId),
+            ),
+          );
         },
         borderRadius: BorderRadius.circular(12.0),
         child: Column(
