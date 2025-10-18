@@ -4,41 +4,51 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
-SCOPES = ['https://www.googleapis.com/auth/documents.readonly']
+SCOPES = ['https://www.googleapis.com/auth/documents.readonly',
+        'https://www.googleapis.com/auth/drive.readonly']
 
-
-
-def get_docs_client():
+def _get_credentials():
     """
-    Shows usage of the Docs API.
-    Handles authentication and returns a Docs API client.
+    Internal function to get valid user credentials.
     """
-
     creds = None
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if os.path.exists('creds/token.json'):
+        creds = Credentials.from_authorized_user_file('creds/token.json', SCOPES)
     
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json',
+                'creds/credentials.json',
                 SCOPES
             )
             creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
+        with open('creds/token.json', 'w') as token:
             token.write(creds.to_json())
+    return creds
 
+def get_docs_service():
+    """
+    Returns an authenticated Google Docs API service client.
+    """
+    creds = _get_credentials()
     return build('docs', 'v1', credentials=creds)
+
+def get_drive_service():
+    """
+    Returns an authenticated Google Drive API service client.
+    """
+    creds = _get_credentials()
+    return build('drive', 'v3', credentials=creds)
 
 def get_doc_content(doc_id):
     """
     Uses the Docs API to get the content of a document.
     """
     try:
-        service = get_docs_client()
-
+        # Use the specific Docs service
+        service = get_docs_service() 
         doc = service.documents().get(documentId=doc_id).execute()
 
         body = doc.get('body')
@@ -58,7 +68,6 @@ def read_structural_elements(elements):
     text = ""
     for value in elements:
         if 'paragraph' in value:
-            # Paragraph element.
             para_elements = value.get('paragraph').get('elements')
             for elem in para_elements:
                 if 'textRun' in elem:
@@ -69,7 +78,5 @@ def read_structural_elements(elements):
             table = value.get('table')
             for row in table.get('tableRows'):
                 for cell in row.get('tableCells'):
-                    # Each cell contains more structural elements.
                     text += read_structural_elements(cell.get('content'))
-
     return text
