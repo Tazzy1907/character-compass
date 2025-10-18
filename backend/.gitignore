@@ -1,2 +1,4 @@
 .venv/
 .env
+src/credentials.json
+src/token.json
