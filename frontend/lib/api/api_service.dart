@@ -4,7 +4,8 @@ import '../models/card_item.dart';
 
 // A dedicated class for handling API interactions.
 class ApiService {
-  final bool isTesting = true;
+  final bool isTesting = false;
+  final String baseUrl = "http://localhost:8000";
 
   // --- MOCK DATA FOR TESTING ---
   // This function simulates an API response.
@@ -42,7 +43,7 @@ class ApiService {
       return _getMockData();
     }
 
-    const apiUrl = 'https://your-api-domain.com/api/get_books';
+    final apiUrl = "$baseUrl/api/books";
     try {
       final response = await http.get(Uri.parse(apiUrl));
 
