@@ -15,6 +15,7 @@ from langchain.agents import create_agent
 # Local Imports
 from char_info import CharacterProfile, CharacterList
 from docs_api import get_doc_content, get_drive_service
+import database
 
 # Tools
 RETRIEVER_TOOL = None
@@ -30,7 +31,7 @@ api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OPENAI_API_KEY is not set")
 
-llm = ChatOpenAI(api_key=api_key, model="gpt-5", stream_usage=True)
+llm = ChatOpenAI(api_key=api_key, model="gpt-5-mini", stream_usage=True)
 
 # EXAMPLE DOCUMENT ID.
 DOC_ID = '1DN04wAju6_XflgjVXj4grRSlsA9w7Xmv_cRVB7w1d84'
@@ -221,6 +222,16 @@ if __name__ == "__main__":
     create_tools()
     create_agents()
 
+    # Initialize database
+    database.initialize_database()
+    
+    # Add the book to the database (you can modify name and icon as needed)
+    database.add_or_update_book(
+        url=DOC_ID,
+        name="Sample Book",  # TODO: Update with actual book title
+        icon=None  # TODO: Add book icon path if available
+    )
+
     print("\n--- Live Character Profile Assistant ---")
 
     # --- MAIN ORCHESTRATION LOOP ---
@@ -237,6 +248,7 @@ if __name__ == "__main__":
                 "messages": [{"role": "user", "content": "Use your retriever tool to find the characters of note from the book that has been indexed."}]
             })
             
+            # Get characters from response and split into main and side.
             characters = list_response.get('structured_response')
             main_chars = characters.main_characters
             side_chars = characters.side_characters
@@ -249,13 +261,49 @@ if __name__ == "__main__":
             for char_name in main_chars:
                 print(f"Creating profile for {char_name}...")
                 profile_response = PROFILE_AGENT.invoke({
-                    "messages": [{"role": "user", "content": f"Create a detailed character profile for the character {char_name}. Use your retriever tool to find information from the book. If information is not available, use None or empty values."}]
+                    "messages": [{
+                        "role": "user",
+                        "content": f"Create a detailed character profile for the character {char_name}. Use your retriever tool to find information from the book. If information is not available, use None or empty values."
+                    }]
                 })
                 
                 character_profile = profile_response.get('structured_response')
 
                 if isinstance(character_profile, CharacterProfile):
                     print(character_profile.model_dump_json(indent=2))
+                    
+                    # Save character profile to database
+                    database.add_or_update_character(
+                        profile=character_profile,
+                        book_url=DOC_ID,
+                        character_type="main"
+                    )
+                else:
+                    print(f"Error: Did not recieve a profile response for {char_name}")
+                
+                time.sleep(5) # Avoid API response times.
+            
+            # Loop through side characters and save them as well
+            for char_name in side_chars:
+                print(f"Creating profile for side character {char_name}...")
+                profile_response = PROFILE_AGENT.invoke({
+                    "messages": [{
+                        "role": "user",
+                        "content": f"Create a detailed character profile for the character {char_name}. Use your retriever tool to find information from the book. If information is not available, use None or empty values."
+                    }]
+                })
+                
+                character_profile = profile_response.get('structured_response')
+
+                if isinstance(character_profile, CharacterProfile):
+                    print(character_profile.model_dump_json(indent=2))
+                    
+                    # Save side character profile to database
+                    database.add_or_update_character(
+                        profile=character_profile,
+                        book_url=DOC_ID,
+                        character_type="side"
+                    )
                 else:
                     print(f"Error: Did not recieve a profile response for {char_name}")
                 
