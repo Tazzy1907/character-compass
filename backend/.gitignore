@@ -1,1 +1,4 @@
 .venv/
+.env
+src/creds/
+character_compass.db
