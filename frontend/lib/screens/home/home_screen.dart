@@ -4,6 +4,7 @@ import 'widgets/add_item_dialog.dart';
 import '../../models/card_item.dart';
 import '../../api/api_service.dart';
 import '../../style.dart';
+import '../chat/chat_screen.dart';
 
 // HomeScreen is now a StatefulWidget to manage the list of items.
 class HomeScreen extends StatefulWidget {
@@ -87,6 +88,18 @@ class _HomeScreenState extends State<HomeScreen> {
           "CharacterCompass",
           style: TextStyle(color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
+            tooltip: 'Character Chat',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ChatScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: _buildBody(),
       floatingActionButton: FloatingActionButton(
