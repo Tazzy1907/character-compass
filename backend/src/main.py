@@ -211,55 +211,63 @@ def create_agents():
         print(f"Error creating agents: {e}")
         exit(1)
 
-# Main loop.
-if __name__ == "__main__":
-    # Startup
-    initialise_rag_system()
-    # Separate monitoring thread in the background.
-    begin_change_monitoring()
-
-    # Create tools and agents.
-    create_tools()
-    create_agents()
-
-    # Initialize database
-    database.initialize_database()
+# ------------------------------------------------------------ PROFILE GENERATION ------------------------------------------------------------
+def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: str = None):
+    """
+    Generate character profiles for a specific book.
+    This function can be called from the API or run standalone.
     
-    # Add the book to the database (you can modify name and icon as needed)
-    database.add_or_update_book(
-        url=DOC_ID,
-        name="Sample Book",  # TODO: Update with actual book title
-        icon=None  # TODO: Add book icon path if available
-    )
+    Args:
+        book_url: The Google Doc ID/URL for the book
+        book_name: Optional book name (defaults to "Sample Book")
+        book_icon: Optional book icon path
+        
+    Returns:
+        dict: Status information about the generation process
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"Starting profile generation for book: {book_url}")
+        print(f"{'='*60}\n")
+        
+        # Ensure database is initialized
+        database.initialize_database()
+        
+        # Add/update book in database
+        database.add_or_update_book(
+            url=book_url,
+            name=book_name or "Sample Book",
+            icon=book_icon
+        )
+        
+        # Check if agents are ready
+        if not LISTER_AGENT or not PROFILE_AGENT:
+            return {
+                "success": False,
+                "error": "Agents not initialized. Please ensure the RAG system is set up first."
+            }
+        
+        print("Getting list of characters from book...")
+        list_response = LISTER_AGENT.invoke({
+            "messages": [{"role": "user", "content": "Use your retriever tool to find the characters of note from the book that has been indexed."}]
+        })
+        
+        # Get characters from response and split into main and side
+        characters = list_response.get('structured_response')
+        main_chars = characters.main_characters
+        side_chars = characters.side_characters
 
-    print("\n--- Live Character Profile Assistant ---")
+        print("\n--- Characters Identified ---")
+        print(f"Main characters: {main_chars}")
+        print(f"Side characters: {side_chars}\n")
 
-    # --- MAIN ORCHESTRATION LOOP ---
-    while True:
-        try:
-            # Get list of main characters.
-            if not LISTER_AGENT or not PROFILE_AGENT:
-                print("Agents not ready yet. Waiting for initialization...")
-                time.sleep(10)
-                continue
-            
-            print("Getting list of main characters...")
-            list_response = LISTER_AGENT.invoke({
-                "messages": [{"role": "user", "content": "Use your retriever tool to find the characters of note from the book that has been indexed."}]
-            })
-            
-            # Get characters from response and split into main and side.
-            characters = list_response.get('structured_response')
-            main_chars = characters.main_characters
-            side_chars = characters.side_characters
+        profiles_created = 0
+        profiles_failed = 0
 
-            print("--- Characters Identified ---")
-            print(f"Main characters: {main_chars}")
-            print(f"Side characters: {side_chars}")
-
-            # Loop through the main characters and call the profile agent on each.
-            for char_name in main_chars:
-                print(f"Creating profile for {char_name}...")
+        # Loop through the main characters and call the profile agent on each
+        for char_name in main_chars:
+            print(f"Creating profile for {char_name}...")
+            try:
                 profile_response = PROFILE_AGENT.invoke({
                     "messages": [{
                         "role": "user",
@@ -275,17 +283,23 @@ if __name__ == "__main__":
                     # Save character profile to database
                     database.add_or_update_character(
                         profile=character_profile,
-                        book_url=DOC_ID,
+                        book_url=book_url,
                         character_type="main"
                     )
+                    profiles_created += 1
                 else:
-                    print(f"Error: Did not recieve a profile response for {char_name}")
+                    print(f"Error: Did not receive a profile response for {char_name}")
+                    profiles_failed += 1
                 
-                time.sleep(5) # Avoid API response times.
-            
-            # Loop through side characters and save them as well
-            for char_name in side_chars:
-                print(f"Creating profile for side character {char_name}...")
+                time.sleep(5)  # Avoid API rate limits
+            except Exception as e:
+                print(f"Error creating profile for {char_name}: {e}")
+                profiles_failed += 1
+        
+        # Loop through side characters and save them as well
+        for char_name in side_chars:
+            print(f"Creating profile for side character {char_name}...")
+            try:
                 profile_response = PROFILE_AGENT.invoke({
                     "messages": [{
                         "role": "user",
@@ -301,17 +315,66 @@ if __name__ == "__main__":
                     # Save side character profile to database
                     database.add_or_update_character(
                         profile=character_profile,
-                        book_url=DOC_ID,
+                        book_url=book_url,
                         character_type="side"
                     )
+                    profiles_created += 1
                 else:
-                    print(f"Error: Did not recieve a profile response for {char_name}")
+                    print(f"Error: Did not receive a profile response for {char_name}")
+                    profiles_failed += 1
                 
-                time.sleep(5) # Avoid API response times.
-            
-            print("\n=== All character profiles created successfully! ===")
-            break
+                time.sleep(5)  # Avoid API rate limits
+            except Exception as e:
+                print(f"Error creating profile for {char_name}: {e}")
+                profiles_failed += 1
+        
+        print(f"\n{'='*60}")
+        print(f"Profile generation complete!")
+        print(f"Created: {profiles_created} | Failed: {profiles_failed}")
+        print(f"{'='*60}\n")
+        
+        return {
+            "success": True,
+            "profiles_created": profiles_created,
+            "profiles_failed": profiles_failed,
+            "main_characters": main_chars,
+            "side_characters": side_chars
+        }
+        
+    except Exception as e:
+        error_msg = f"Error during profile generation: {str(e)}"
+        print(f"\n❌ {error_msg}\n")
+        return {
+            "success": False,
+            "error": error_msg
+        }
 
-        except KeyboardInterrupt:
-            print("\nExiting...")
-            exit(0)
+# Main loop.
+if __name__ == "__main__":
+    # Startup
+    initialise_rag_system()
+    # Separate monitoring thread in the background.
+    begin_change_monitoring()
+
+    # Create tools and agents.
+    create_tools()
+    create_agents()
+
+    print("\n--- Live Character Profile Assistant ---")
+
+    # Run profile generation
+    try:
+        result = generate_profiles_for_book(
+            book_url=DOC_ID,
+            book_name="Sample Book",  # TODO: Update with actual book title
+            book_icon=None  # TODO: Add book icon path if available
+        )
+        
+        if result["success"]:
+            print("\n=== All character profiles created successfully! ===")
+        else:
+            print(f"\n❌ Profile generation failed: {result.get('error')}")
+            
+    except KeyboardInterrupt:
+        print("\nExiting...")
+        exit(0)
