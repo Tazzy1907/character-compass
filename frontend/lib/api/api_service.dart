@@ -107,8 +107,6 @@ class ApiService {
         name: "Sample Character",
         bookUrl: "test_book_1",
         characterType: "main",
-        createdAt: "19/10/26",
-        updatedAt: "19/10/26",
         age: 25,
         gender: "Female",
         sex: "Female",
