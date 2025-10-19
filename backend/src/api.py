@@ -18,6 +18,7 @@ import database
 from api_models import (
     BookResponse,
     CharacterResponse,
+    CharacterSummaryResponse,
     CharacterListResponse,
     StatsResponse,
     BookStatsResponse,
@@ -172,17 +173,17 @@ async def get_book(book_url: str):
     response_model=CharacterListResponse,
     tags=["Characters"],
     summary="Get all characters for a book",
-    description="Retrieve all characters (main and side) for a specific book"
+    description="Retrieve all characters (main and side) for a specific book (summary view)"
 )
 async def get_book_characters(book_url: str):
     """
-    Get all characters for a specific book.
+    Get all characters for a specific book (returns only id, name, and character_type).
     
     Args:
         book_url: The book's URL/Document ID
         
     Returns:
-        CharacterListResponse with list of characters
+        CharacterListResponse with list of character summaries
     """
     try:
         # First check if book exists
@@ -194,9 +195,20 @@ async def get_book_characters(book_url: str):
             )
         
         characters = database.get_characters_by_book(book_url)
+        
+        # Transform to summary view (only id, name, character_type)
+        character_summaries = [
+            CharacterSummaryResponse(
+                id=char['id'],
+                name=char['name'],
+                character_type=char['character_type']
+            )
+            for char in characters
+        ]
+        
         return CharacterListResponse(
-            characters=characters,
-            count=len(characters)
+            characters=character_summaries,
+            count=len(character_summaries)
         )
     except HTTPException:
         raise
@@ -209,17 +221,17 @@ async def get_book_characters(book_url: str):
     response_model=CharacterListResponse,
     tags=["Characters"],
     summary="Get main characters for a book",
-    description="Retrieve only main characters for a specific book"
+    description="Retrieve only main characters for a specific book (summary view)"
 )
 async def get_main_characters(book_url: str):
     """
-    Get only main characters for a specific book.
+    Get only main characters for a specific book (returns only id, name, and character_type).
     
     Args:
         book_url: The book's URL/Document ID
         
     Returns:
-        CharacterListResponse with list of main characters
+        CharacterListResponse with list of main character summaries
     """
     try:
         # First check if book exists
@@ -231,9 +243,20 @@ async def get_main_characters(book_url: str):
             )
         
         characters = database.get_main_characters(book_url)
+        
+        # Transform to summary view (only id, name, character_type)
+        character_summaries = [
+            CharacterSummaryResponse(
+                id=char['id'],
+                name=char['name'],
+                character_type=char['character_type']
+            )
+            for char in characters
+        ]
+        
         return CharacterListResponse(
-            characters=characters,
-            count=len(characters)
+            characters=character_summaries,
+            count=len(character_summaries)
         )
     except HTTPException:
         raise
@@ -246,17 +269,17 @@ async def get_main_characters(book_url: str):
     response_model=CharacterListResponse,
     tags=["Characters"],
     summary="Get side characters for a book",
-    description="Retrieve only side characters for a specific book"
+    description="Retrieve only side characters for a specific book (summary view)"
 )
 async def get_side_characters(book_url: str):
     """
-    Get only side characters for a specific book.
+    Get only side characters for a specific book (returns only id, name, and character_type).
     
     Args:
         book_url: The book's URL/Document ID
         
     Returns:
-        CharacterListResponse with list of side characters
+        CharacterListResponse with list of side character summaries
     """
     try:
         # First check if book exists
@@ -268,9 +291,20 @@ async def get_side_characters(book_url: str):
             )
         
         characters = database.get_side_characters(book_url)
+        
+        # Transform to summary view (only id, name, character_type)
+        character_summaries = [
+            CharacterSummaryResponse(
+                id=char['id'],
+                name=char['name'],
+                character_type=char['character_type']
+            )
+            for char in characters
+        ]
+        
         return CharacterListResponse(
-            characters=characters,
-            count=len(characters)
+            characters=character_summaries,
+            count=len(character_summaries)
         )
     except HTTPException:
         raise
