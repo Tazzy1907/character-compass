@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'widgets/responsive_icon_grid.dart';
 import 'widgets/add_item_dialog.dart';
-import '../../models/card_item.dart';
+import '../../models/book_item.dart';
 import '../../api/api_service.dart';
 import '../../style.dart';
 
@@ -15,7 +15,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ApiService _apiService = ApiService();
-  List<CardItem>? _items;
+  List<BookItem>? _items;
   String? _error;
   bool _isLoading = true;
 
@@ -42,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Adds a new item to the list and rebuilds the UI.
-  void _addItem(CardItem newItem) {
+  void _addItem(BookItem newItem) {
     setState(() {
       _items?.add(newItem);
     });
@@ -50,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Shows the dialog and waits for the user to submit a new item.
   void _showAddItemDialog() async {
-    final newItem = await showDialog<CardItem>(
+    final newItem = await showDialog<BookItem>(
       context: context,
       builder: (BuildContext context) {
         return const AddItemDialog();

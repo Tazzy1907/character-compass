@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../../../models/card_item.dart';
+import '../../../models/book_item.dart';
 import '../../../assets/svgs.dart';
 import '../../../style.dart';
 import "./app_text_field.dart";
@@ -52,7 +52,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
     if (name.isNotEmpty && url.isNotEmpty && _selectedIcon != null) {
       final docId = extractGoogleDocId(url);
       if (docId == null) return;
-      final newItem = CardItem(name: name, icon: _selectedIcon!, docId: docId);
+      final newItem = BookItem(name: name, icon: _selectedIcon!, docId: docId);
       // Pop the dialog and return the new item
       Navigator.of(context).pop(newItem);
     }
