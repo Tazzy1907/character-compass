@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../../models/card_item.dart';
-import '../../../assets/svgs.dart';
+import '../../../icons/svgs.dart';
 import '../../../style.dart';
-import "./app_text_field.dart";
+import "app_text_field.dart";
 
 class AddItemDialog extends StatefulWidget {
   const AddItemDialog({super.key});
