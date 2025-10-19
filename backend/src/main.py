@@ -120,7 +120,8 @@ def check_and_update_document(doc_id: str) -> dict:
         
         # No changes detected
         if current_mod_time == rag_state.last_known_mod_time:
-            print("✓ No changes detected")
+            print("✓ No changes detected (modifiedTime unchanged)")
+            print("💡 Tip: Google Drive may take 30-60 seconds to update modifiedTime after edits")
             return {
                 "changed": False,
                 "chunks_added": 0,
@@ -501,6 +502,9 @@ def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict
             # Combine all changed text
             changed_text = " ".join(changed_chunks).lower()
             
+            print(f"📄 Changed chunks preview (first 200 chars):")
+            print(f"   {changed_text[:200]}...")
+            
             # Only update characters mentioned in changed chunks
             characters_to_update = [
                 char for char in existing_characters
@@ -510,6 +514,13 @@ def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict
             print(f"📝 Filtered to {len(characters_to_update)} characters mentioned in changed chunks:")
             for char in characters_to_update:
                 print(f"   - {char['name']}")
+            
+            # Fallback: If no characters match, update all as a safety measure
+            if len(characters_to_update) == 0:
+                print(f"⚠️  WARNING: No characters matched the filter!")
+                print(f"⚠️  Character names in DB: {[c['name'] for c in existing_characters]}")
+                print(f"⚠️  Falling back to updating ALL characters to ensure database stays current")
+                characters_to_update = existing_characters
         else:
             # No chunk info, update all (fallback)
             characters_to_update = existing_characters
@@ -517,6 +528,8 @@ def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict
         
         updated_characters = []
         failed_updates = []
+        
+        print(f"\n🔄 Starting update loop for {len(characters_to_update)} character(s)...")
         
         # Update each filtered character
         for char_data in characters_to_update:
@@ -537,18 +550,20 @@ def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict
                 
                 if isinstance(character_profile, CharacterProfile):
                     # Update character in database
+                    print(f"💾 Writing {char_name} to database...")
                     database.add_or_update_character(
                         profile=character_profile,
                         book_url=book_url,
                         character_type=char_type
                     )
                     updated_characters.append(char_name)
-                    print(f"✓ Updated {char_name}")
+                    print(f"✓ Successfully updated {char_name} in database")
                 else:
                     print(f"✗ Failed to get valid profile for {char_name}")
                     failed_updates.append(char_name)
                 
-                # Rate limiting
+                # Rate limiting - space out OpenAI API calls to avoid rate limits
+                # (This is separate from frontend's 60-second monitoring interval)
                 time.sleep(3)
                 
             except Exception as e:
