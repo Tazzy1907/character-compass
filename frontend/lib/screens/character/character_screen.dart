@@ -72,6 +72,28 @@ class _CharacterScreenState extends State<CharacterScreen>
     return text[0].toUpperCase() + text.substring(1);
   }
 
+  bool _shouldShowChatButton() {
+    if (_character == null) return false;
+
+    // Don't show chat for side characters
+    if (_character!.characterType.toLowerCase() == 'side') {
+      return false;
+    }
+
+    // Don't show chat if character has no meaningful information
+    bool hasAnyInfo =
+        _character!.hasPersonality ||
+        _character!.hasAppearance ||
+        _character!.hasBackstory ||
+        _character!.hasRelationships ||
+        _character!.hasGoals ||
+        _character!.hasMotivations ||
+        _character!.age != null ||
+        (_character!.occupation != null && _character!.occupation!.isNotEmpty);
+
+    return hasAnyInfo;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -97,7 +119,7 @@ class _CharacterScreenState extends State<CharacterScreen>
         ),
       ),
       body: _buildBody(),
-      floatingActionButton: _character != null
+      floatingActionButton: _shouldShowChatButton()
           ? FloatingActionButton.extended(
               onPressed: _openChat,
               backgroundColor: highlightColor,

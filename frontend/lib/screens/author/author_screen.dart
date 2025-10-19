@@ -21,6 +21,8 @@ class _AuthorScreenState extends State<AuthorScreen> {
   String? _error;
   bool _isLoading = true;
   Timer? _statusCheckTimer;
+  int _statusCheckCount = 0;
+  static const int _maxStatusChecks = 120; // 120 * 5s = 10 minutes max
 
   @override
   void initState() {
@@ -102,6 +104,9 @@ class _AuthorScreenState extends State<AuthorScreen> {
     // Cancel existing timer if any
     _statusCheckTimer?.cancel();
 
+    // Reset the check counter
+    _statusCheckCount = 0;
+
     // Create a new periodic timer that checks every 5 seconds
     _statusCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       _checkGenerationStatus();
@@ -110,6 +115,32 @@ class _AuthorScreenState extends State<AuthorScreen> {
 
   // Check the generation status and update UI accordingly
   Future<void> _checkGenerationStatus() async {
+    // Increment check counter
+    _statusCheckCount++;
+
+    // Check if we've exceeded max checks (timeout)
+    if (_statusCheckCount >= _maxStatusChecks) {
+      print(
+        'Status check timeout - stopping polling after $_statusCheckCount attempts',
+      );
+      _statusCheckTimer?.cancel();
+
+      // Clear any processing states
+      if (mounted && _items != null) {
+        setState(() {
+          for (int i = 0; i < _items!.length; i++) {
+            if (_items![i].isProcessing) {
+              _items![i] = _items![i].copyWith(
+                isProcessing: false,
+                error: 'Generation timed out',
+              );
+            }
+          }
+        });
+      }
+      return;
+    }
+
     try {
       final status = await _apiService.checkGenerationStatus();
 
@@ -169,6 +200,7 @@ class _AuthorScreenState extends State<AuthorScreen> {
         // If no more processing items, stop polling
         if (!hasProcessingItems) {
           _statusCheckTimer?.cancel();
+          _statusCheckCount = 0; // Reset counter
         }
 
         // Refresh the list from the server to get updated data (only if no error)
@@ -177,8 +209,29 @@ class _AuthorScreenState extends State<AuthorScreen> {
         }
       }
     } catch (e) {
-      // Silently fail - we'll try again on next poll
-      print('Error checking generation status: $e');
+      // Log error but continue polling (with timeout protection)
+      print(
+        'Error checking generation status (attempt $_statusCheckCount/$_maxStatusChecks): $e',
+      );
+
+      // If we've had too many consecutive errors, stop polling
+      if (_statusCheckCount >= 10) {
+        print('Too many consecutive errors - stopping polling');
+        _statusCheckTimer?.cancel();
+
+        if (mounted && _items != null) {
+          setState(() {
+            for (int i = 0; i < _items!.length; i++) {
+              if (_items![i].isProcessing) {
+                _items![i] = _items![i].copyWith(
+                  isProcessing: false,
+                  error: 'Connection error',
+                );
+              }
+            }
+          });
+        }
+      }
     }
   }
 

@@ -32,7 +32,7 @@ api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OPENAI_API_KEY is not set")
 
-llm = ChatOpenAI(api_key=api_key, model="gpt-4o-mini", stream_usage=True)
+llm = ChatOpenAI(api_key=api_key, model="gpt-4o", temperature=0.05, stream_usage=True)
 
 # Store state of RAG components.
 class RAGState:
@@ -391,7 +391,7 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
                 profile_response = PROFILE_AGENT.invoke({
                     "messages": [{
                         "role": "user",
-                        "content": f"Create a detailed character profile for the character {char_name}. Use your retriever tool to find information from the book. If information is not available, use None or empty values."
+                        "content": f"Create a detailed character profile for the character {char_name}. Use your retriever tool to find information from the book. Do NOT get information from your own knowledge or outside the receiver tool."
                     }]
                 })
                 
@@ -522,12 +522,16 @@ def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict
         print(f"Updating existing profiles for book: {book_url}")
         print(f"{'='*60}\n")
         
-        # Check if agents are ready
+        # Ensure agents are initialized (they might not be after server restart)
         if not PROFILE_AGENT:
-            return {
-                "success": False,
-                "error": "Profile agent not initialized"
-            }
+            print("⚠️  Profile agent not initialized. Creating agents...")
+            create_agents()
+            if not PROFILE_AGENT:
+                return {
+                    "success": False,
+                    "error": "Failed to initialize profile agent"
+                }
+            print("✓ Agents created successfully")
         
         # Get existing characters from database
         existing_characters = database.get_characters_by_book(book_url)
