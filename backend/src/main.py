@@ -15,6 +15,7 @@ from langchain.agents import create_agent
 # Local Imports
 from char_info import CharacterProfile, CharacterList
 from file_loader import get_story_content, get_file_modified_time, scan_stories_folder
+from persona import createPersonaAgent
 import database
 
 # Tools
@@ -31,7 +32,7 @@ api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OPENAI_API_KEY is not set")
 
-llm = ChatOpenAI(api_key=api_key, model="gpt-5-mini", stream_usage=True)
+llm = ChatOpenAI(api_key=api_key, model="gpt-4o-mini", stream_usage=True)
 
 # Store state of RAG components.
 class RAGState:
@@ -256,8 +257,8 @@ def create_agents():
             system_prompt="""
             You are a helpful assistant who is an expert at analysing a book to build
             character profiles. Use the available tools to find the necessary information.
-            **ONLY** get information from the book.
-            If the information does not exist, do not make it up.
+            
+            You must ONLY use information available gotten from the retriever tool. NOWHERE ELSE.
             """,
             response_format=CharacterProfile
         )
@@ -562,7 +563,7 @@ def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict
                 characters_to_update = existing_characters
         else:
             # No chunk info, update all (fallback)
-            characters_to_update = existing_characters
+            characters_to_update = []
             print(f"⚠️  No changed chunk info - updating all {len(characters_to_update)} characters")
         
         updated_characters = []
@@ -628,6 +629,98 @@ def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict
             "success": False,
             "error": error_msg,
             "characters_updated": []
+        }
+
+# ------------------------------------------------------------ CHARACTER CHAT ------------------------------------------------------------
+def chat_with_character(character_id: int, user_message: str, chat_history: list = None):
+    """
+    Chat with a character using their persona agent.
+    
+    Args:
+        character_id: ID of the character to chat with
+        user_message: The user's message
+        chat_history: List of previous messages in format [{"role": "user/assistant", "content": "..."}]
+        
+    Returns:
+        dict: Contains the character's response and updated chat history
+    """
+    try:
+        print(f"\n💬 Chat request for character ID: {character_id}")
+        
+        # Get character from database
+        character_data = database.get_character_by_id(character_id)
+        if not character_data:
+            raise Exception(f"Character with ID {character_id} not found")
+        
+        # Convert database character to CharacterProfile
+        character_profile = CharacterProfile(
+            name=character_data['name'],
+            age=character_data['age'],
+            gender=character_data['gender'],
+            sex=character_data['sex'],
+            race=character_data['race'],
+            occupation=character_data['occupation'],
+            personality=character_data['personality'],
+            appearance=character_data['appearance'],
+            backstory=character_data['backstory'],
+            relationships=character_data['relationships'],
+            goals=character_data['goals'],
+            motivations=character_data['motivations']
+        )
+        
+        print(f"✓ Loaded character profile for: {character_profile.name}")
+        
+        # Ensure RAG system and tools are initialized for the character's book
+        book_url = character_data['book_url']
+        if rag_state.vectorstore is None or rag_state.current_doc_id != book_url:
+            print(f"⚠️  Initializing RAG system for book: {book_url}")
+            initialise_rag_system(book_url)
+            create_tools()
+        
+        # Create persona agent for this character
+        print(f"🤖 Creating persona agent for {character_profile.name}")
+        persona_agent = createPersonaAgent(llm, character_profile, [RETRIEVER_TOOL])
+        
+        # Initialize or use existing chat history
+        if chat_history is None:
+            chat_history = []
+        
+        # Add user's message to history
+        chat_history.append({"role": "user", "content": user_message})
+        
+        print(f"📨 User: {user_message}")
+        
+        # Invoke persona agent
+        response = persona_agent.invoke({
+            "messages": chat_history
+        })
+        
+        # Extract AI's response
+        ai_message = response['messages'][-1]
+        ai_content = ai_message.content
+        
+        print(f"🎭 {character_profile.name}: {ai_content}")
+        
+        # Add AI's response to history
+        chat_history.append({"role": "assistant", "content": ai_content})
+        
+        return {
+            "success": True,
+            "character_name": character_profile.name,
+            "response": ai_content,
+            "chat_history": chat_history
+        }
+        
+    except Exception as e:
+        error_msg = f"Error in chat: {str(e)}"
+        print(f"\n❌ {error_msg}\n")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": error_msg,
+            "response": None,
+            "chat_history": chat_history or []
         }
 
 # Main loop - no longer used with local file system

@@ -217,3 +217,50 @@ class DocumentChangeResponse(BaseModel):
             }
         }
 
+# ============================================
+# Chat Models
+# ============================================
+
+class ChatMessage(BaseModel):
+    """A single chat message"""
+    role: str = Field(..., description="Role of the message sender: 'user' or 'assistant'")
+    content: str = Field(..., description="Content of the message")
+
+class ChatRequest(BaseModel):
+    """Request body for chat with character"""
+    message: str = Field(..., description="The user's message")
+    chat_history: List[ChatMessage] = Field(default_factory=list, description="Previous chat messages")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Hello! What's your name?",
+                "chat_history": [
+                    {"role": "user", "content": "Hi there!"},
+                    {"role": "assistant", "content": "Hello! How can I help you?"}
+                ]
+            }
+        }
+
+class ChatResponse(BaseModel):
+    """Response from chat endpoint"""
+    success: bool = Field(..., description="Whether the chat was successful")
+    character_name: Optional[str] = Field(None, description="Name of the character")
+    response: Optional[str] = Field(None, description="The character's response")
+    chat_history: List[ChatMessage] = Field(default_factory=list, description="Updated chat history")
+    error: Optional[str] = Field(None, description="Error message if any")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "character_name": "Tom",
+                "response": "Hello! I'm Tom, and I'm 27 years old. I love owls!",
+                "chat_history": [
+                    {"role": "user", "content": "Hello! What's your name?"},
+                    {"role": "assistant", "content": "Hello! I'm Tom, and I'm 27 years old. I love owls!"}
+                ],
+                "error": None
+            }
+        }
+

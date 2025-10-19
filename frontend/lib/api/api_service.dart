@@ -232,4 +232,36 @@ class ApiService {
       throw Exception('Failed to check document changes: $e');
     }
   }
+
+  // Send chat message to character
+  Future<Map<String, dynamic>> sendChatMessage({
+    required int characterId,
+    required String message,
+    required List<Map<String, String>> chatHistory,
+  }) async {
+    final apiUrl = '$baseUrl/api/chat/character/$characterId';
+
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'message': message, 'chat_history': chatHistory}),
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        return {
+          'success': jsonResponse['success'] ?? false,
+          'character_name': jsonResponse['character_name'] ?? '',
+          'response': jsonResponse['response'] ?? '',
+          'chat_history': jsonResponse['chat_history'] ?? [],
+          'error': jsonResponse['error'],
+        };
+      } else {
+        throw Exception('Failed to send chat message: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to send chat message: $e');
+    }
+  }
 }

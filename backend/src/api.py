@@ -26,7 +26,10 @@ from api_models import (
     GenerateRequest,
     GenerateResponse,
     GenerationStatusResponse,
-    DocumentChangeResponse
+    DocumentChangeResponse,
+    ChatRequest,
+    ChatResponse,
+    ChatMessage
 )
 
 # Initialize FastAPI app
@@ -405,6 +408,85 @@ async def get_character(character_id: int):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+# ==================== CHAT ENDPOINTS ====================
+
+@app.post(
+    "/api/chat/character/{character_id}",
+    response_model=ChatResponse,
+    tags=["Chat"],
+    summary="Chat with a character",
+    description="Send a message to a character and get a response in their persona"
+)
+async def chat_with_character_endpoint(character_id: int, request: ChatRequest):
+    """
+    Chat with a character using their AI persona.
+    
+    The character will respond based on their personality, backstory, and knowledge
+    from the book they're in. They can use the retrieve_book_info tool to look up
+    information they might not immediately remember.
+    
+    Args:
+        character_id: The character's unique ID
+        request: ChatRequest with message and optional chat history
+        
+    Returns:
+        ChatResponse with the character's response and updated history
+        
+    Example:
+        POST /api/chat/character/1
+        Body: {"message": "Hello! What do you like to do?", "chat_history": []}
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"Chat request for character ID: {character_id}")
+        print(f"User message: {request.message}")
+        print(f"{'='*60}\n")
+        
+        # Convert Pydantic chat history to dict format
+        chat_history_dicts = [
+            {"role": msg.role, "content": msg.content}
+            for msg in request.chat_history
+        ]
+        
+        # Call the chat function from main.py
+        from main import chat_with_character
+        result = chat_with_character(
+            character_id=character_id,
+            user_message=request.message,
+            chat_history=chat_history_dicts
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Unknown error during chat")
+            )
+        
+        # Convert dict chat history back to Pydantic models
+        chat_history_models = [
+            ChatMessage(role=msg["role"], content=msg["content"])
+            for msg in result["chat_history"]
+        ]
+        
+        return ChatResponse(
+            success=True,
+            character_name=result["character_name"],
+            response=result["response"],
+            chat_history=chat_history_models,
+            error=None
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error during chat: {str(e)}"
+        )
 
 
 # ==================== PROFILE GENERATION ENDPOINTS ====================

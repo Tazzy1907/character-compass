@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../api/api_service.dart';
 import '../../models/character_details.dart';
 import '../../style.dart';
+import 'chat_screen.dart';
 
 class CharacterScreen extends StatefulWidget {
   final int characterId;
@@ -55,13 +56,13 @@ class _CharacterScreenState extends State<CharacterScreen>
     }
   }
 
-  void _showChatPlaceholder() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Chat with ${_character?.name ?? "character"} (Coming soon!)',
-        ),
-        duration: const Duration(seconds: 2),
+  void _openChat() {
+    if (_character == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(character: _character!),
       ),
     );
   }
@@ -98,7 +99,7 @@ class _CharacterScreenState extends State<CharacterScreen>
       body: _buildBody(),
       floatingActionButton: _character != null
           ? FloatingActionButton.extended(
-              onPressed: _showChatPlaceholder,
+              onPressed: _openChat,
               backgroundColor: highlightColor,
               icon: const Icon(Icons.chat_bubble, color: Colors.white),
               label: const Text("Chat", style: TextStyle(color: Colors.white)),
