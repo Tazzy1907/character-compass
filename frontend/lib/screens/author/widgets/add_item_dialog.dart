@@ -1,12 +1,6 @@
 import 'package:flutter/material.dart';
-<<<<<<< HEAD
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../../../models/card_item.dart';
-import '../../../icons/svgs.dart';
-=======
 import '../../../models/book_item.dart';
-import '../../../assets/svgs.dart';
->>>>>>> characters
+import '../../../icons/svgs.dart';
 import '../../../style.dart';
 import "app_text_field.dart";
 
