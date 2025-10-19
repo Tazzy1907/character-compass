@@ -2,10 +2,10 @@
 class CharacterDetails {
   final int id;
   final String name;
-  final String book_url;
-  final String character_type;
-  final String created_at;
-  final String updated_at;
+  final String bookUrl;
+  final String characterType;
+  final String createdAt;
+  final String updatedAt;
 
   final int? age;
   final String? gender;
@@ -22,10 +22,10 @@ class CharacterDetails {
   CharacterDetails({
     required this.id,
     required this.name,
-    required this.book_url,
-    required this.character_type,
-    required this.created_at,
-    required this.updated_at,
+    required this.bookUrl,
+    required this.characterType,
+    required this.createdAt,
+    required this.updatedAt,
     this.age,
     this.gender,
     this.sex,
@@ -45,10 +45,10 @@ class CharacterDetails {
       return CharacterDetails(
         id: json['id'] as int,
         name: json['name'] as String,
-        book_url: json['book_url'] as String,
-        character_type: json['character_type'] as String,
-        created_at: json['created_at'] as String,
-        updated_at: json['updated_at'] as String,
+        bookUrl: json['bookUrl'] as String,
+        characterType: json['characterType'] as String,
+        createdAt: json['createdAt'] as String,
+        updatedAt: json['updatedAt'] as String,
         age: json['age'] as int?,
         gender: json['gender'] as String?,
         sex: json['sex'] as String?,

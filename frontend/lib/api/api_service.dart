@@ -98,15 +98,17 @@ class ApiService {
   // --- CHARACTER API METHODS ---
 
   /// Fetch a specific character by ID
-  Future<Character> fetchCharacterById(int characterId) async {
+  Future<CharacterDetails> fetchCharacterById(int characterId) async {
     if (isTesting) {
       // Return mock character for testing
       await Future.delayed(const Duration(seconds: 1));
-      return Character(
+      return CharacterDetails(
         id: characterId,
         name: "Sample Character",
         bookUrl: "test_book_1",
         characterType: "main",
+        createdAt: "19/10/26",
+        updatedAt: "19/10/26",
         age: 25,
         gender: "Female",
         sex: "Female",
@@ -134,7 +136,7 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final jsonResponse = json.decode(response.body);
-        return Character.fromJson(jsonResponse);
+        return CharacterDetails.fromJson(jsonResponse);
       } else if (response.statusCode == 404) {
         throw Exception('Character not found');
       } else {
