@@ -64,6 +64,9 @@ class _MyWidgetState extends State<BookScreen> {
           "CharacterCompass",
           style: TextStyle(color: Colors.white),
         ),
+        iconTheme: const IconThemeData(
+          color: Colors.white, // Change this to your desired color
+        ),
       ),
       body: _buildBody(),
       // floatingActionButton: FloatingActionButton(
