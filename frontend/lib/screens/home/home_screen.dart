@@ -10,7 +10,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       // Set the background color for the entire screen
-      backgroundColor: darkColor2, // A dark slate blue color
+      backgroundColor: darkColor, // A dark slate blue color
       // Use a GestureDetector to make the entire body clickable
       body: GestureDetector(
         // The action to perform on tap
