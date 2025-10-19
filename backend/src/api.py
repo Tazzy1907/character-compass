@@ -279,23 +279,19 @@ async def get_side_characters(book_url: str):
 
 
 @app.get(
-    "/api/characters/{character_name}",
+    "/api/characters/{character_id}",
     response_model=CharacterResponse,
     tags=["Characters"],
     summary="Get specific character",
-    description="Retrieve a specific character by name and book URL",
+    description="Retrieve a specific character by their unique ID",
     responses={404: {"model": ErrorResponse}}
 )
-async def get_character(
-    character_name: str,
-    book_url: str = Query(..., description="Book URL/Document ID")
-):
+async def get_character(character_id: int):
     """
-    Get a specific character by name and book URL.
+    Get a specific character by their ID.
     
     Args:
-        character_name: The character's name
-        book_url: The book's URL/Document ID (query parameter)
+        character_id: The character's unique ID
         
     Returns:
         CharacterResponse object
@@ -304,14 +300,14 @@ async def get_character(
         404: If character not found
         
     Example:
-        GET /api/characters/John%20Doe?book_url=doc123
+        GET /api/characters/1
     """
     try:
-        character = database.get_character(character_name, book_url)
+        character = database.get_character_by_id(character_id)
         if not character:
             raise HTTPException(
                 status_code=404,
-                detail=f"Character '{character_name}' not found in book '{book_url}'"
+                detail=f"Character with ID {character_id} not found"
             )
         return character
     except HTTPException:
