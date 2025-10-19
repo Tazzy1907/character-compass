@@ -94,4 +94,54 @@ class ApiService {
       throw Exception('Failed to connect to the API: $e');
     }
   }
+
+  // --- CHARACTER API METHODS ---
+
+  /// Fetch a specific character by ID
+  Future<Character> fetchCharacterById(int characterId) async {
+    if (isTesting) {
+      // Return mock character for testing
+      await Future.delayed(const Duration(seconds: 1));
+      return Character(
+        id: characterId,
+        name: "Sample Character",
+        bookUrl: "test_book_1",
+        characterType: "main",
+        age: 25,
+        gender: "Female",
+        sex: "Female",
+        race: "Human",
+        occupation: "Detective",
+        personality:
+            "Brave, intelligent, and determined. Has a strong sense of justice and never gives up on a case.",
+        appearance:
+            "Tall with dark hair and piercing blue eyes. Usually wears a long coat.",
+        backstory:
+            "A skilled detective who joined the force after her mentor was killed in the line of duty. She has dedicated her life to solving cold cases.",
+        relationships: [
+          "Partner with John Smith",
+          "Friend of Sarah Johnson",
+          "Mentored by Captain Williams",
+        ],
+        goals: ["Solve the cold case", "Find the truth", "Bring justice"],
+        motivations: ["Justice", "Honor her mentor's memory", "Protect others"],
+      );
+    }
+
+    try {
+      final url = Uri.parse('$baseUrl/api/characters/$characterId');
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+        return Character.fromJson(jsonResponse);
+      } else if (response.statusCode == 404) {
+        throw Exception('Character not found');
+      } else {
+        throw Exception('Failed to load character: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to fetch character: $e');
+    }
+  }
 }

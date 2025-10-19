@@ -23,8 +23,24 @@ class BookResponse(BaseModel):
         }
 
 
+class CharacterSummaryResponse(BaseModel):
+    """Response model for character summary data (used in lists)."""
+    id: int = Field(..., description="Character ID")
+    name: str = Field(..., description="Character name")
+    character_type: str = Field(..., description="Character type: main or side")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "name": "John Doe",
+                "character_type": "main"
+            }
+        }
+
+
 class CharacterResponse(BaseModel):
-    """Response model for character profile data."""
+    """Response model for full character profile data."""
     id: int = Field(..., description="Character ID")
     name: str = Field(..., description="Character name")
     book_url: str = Field(..., description="Book this character belongs to")
@@ -34,12 +50,12 @@ class CharacterResponse(BaseModel):
     sex: Optional[str] = Field(None, description="Character sex")
     race: Optional[str] = Field(None, description="Character race")
     occupation: Optional[str] = Field(None, description="Character occupation")
-    personality: str = Field(default="", description="Personality description")
-    appearance: str = Field(default="", description="Physical appearance description")
-    backstory: str = Field(default="", description="Character backstory")
-    relationships: List[str] = Field(default_factory=list, description="List of relationships")
-    goals: List[str] = Field(default_factory=list, description="List of goals")
-    motivations: List[str] = Field(default_factory=list, description="List of motivations")
+    personality: Optional[str] = Field(default="", description="Personality description")
+    appearance: Optional[str] = Field(default="", description="Physical appearance description")
+    backstory: Optional[str] = Field(default="", description="Character backstory")
+    relationships: Optional[List[str]] = Field(default_factory=list, description="List of relationships")
+    goals: Optional[List[str]] = Field(default_factory=list, description="List of goals")
+    motivations: Optional[List[str]] = Field(default_factory=list, description="List of motivations")
     created_at: str = Field(..., description="Creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
     
@@ -66,8 +82,8 @@ class CharacterResponse(BaseModel):
 
 
 class CharacterListResponse(BaseModel):
-    """Response model for a list of characters."""
-    characters: List[CharacterResponse]
+    """Response model for a list of characters (summary view)."""
+    characters: List[CharacterSummaryResponse]
     count: int = Field(..., description="Number of characters returned")
     
     class Config:

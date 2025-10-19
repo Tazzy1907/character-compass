@@ -197,6 +197,29 @@ def get_character(name: str, book_url: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def get_character_by_id(character_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve a character by their unique ID.
+    Converts JSON fields back to lists.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM characters
+            WHERE id = ?
+        """, (character_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            character = dict(row)
+            # Parse JSON fields back to lists
+            character['relationships'] = json.loads(character['relationships'])
+            character['goals'] = json.loads(character['goals'])
+            character['motivations'] = json.loads(character['motivations'])
+            return character
+        return None
+
+
 def get_characters_by_book(book_url: str) -> List[Dict[str, Any]]:
     """
     Retrieve all characters for a specific book.
