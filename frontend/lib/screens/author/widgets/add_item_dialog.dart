@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../models/book_item.dart';
-import '../../../assets/svgs.dart';
+import '../../../icons/svgs.dart';
 import '../../../style.dart';
 import "app_text_field.dart";
 
