@@ -25,7 +25,11 @@ from api_models import (
     ErrorResponse,
     GenerateRequest,
     GenerateResponse,
-    GenerationStatusResponse
+    GenerationStatusResponse,
+    DocumentChangeResponse,
+    ChatRequest,
+    ChatResponse,
+    ChatMessage
 )
 
 # Initialize FastAPI app
@@ -54,6 +58,7 @@ generation_status = {
     "book_url": None,
     "started_at": None,
     "message": "No generation in progress",
+    "error": None,
     "lock": threading.Lock()
 }
 
@@ -68,6 +73,7 @@ def run_generation_task(book_url: str, book_name: Optional[str], book_icon: Opti
         generation_status["book_url"] = book_url
         generation_status["started_at"] = datetime.now().isoformat()
         generation_status["message"] = f"Generating profiles for book: {book_url}"
+        generation_status["error"] = None
     
     try:
         # Import here to avoid circular dependencies and ensure RAG system is initialized
@@ -77,19 +83,24 @@ def run_generation_task(book_url: str, book_name: Optional[str], book_icon: Opti
         
         with generation_status["lock"]:
             generation_status["is_running"] = False
-            generation_status["book_url"] = None
+            generation_status["book_url"] = book_url  # Keep book_url so frontend knows which book finished
             generation_status["started_at"] = None
             if result["success"]:
                 generation_status["message"] = f"Generation completed successfully. Created {result['profiles_created']} profiles."
+                generation_status["error"] = None
             else:
-                generation_status["message"] = f"Generation failed: {result.get('error', 'Unknown error')}"
+                error_msg = result.get('error', 'Unknown error')
+                generation_status["message"] = f"Generation failed: {error_msg}"
+                generation_status["error"] = error_msg
     
     except Exception as e:
         with generation_status["lock"]:
             generation_status["is_running"] = False
-            generation_status["book_url"] = None
+            generation_status["book_url"] = book_url  # Keep book_url so frontend knows which book failed
             generation_status["started_at"] = None
-            generation_status["message"] = f"Generation failed with error: {str(e)}"
+            error_msg = str(e)
+            generation_status["message"] = f"Generation failed with error: {error_msg}"
+            generation_status["error"] = error_msg
 
 
 # ==================== ROOT ENDPOINT ====================
@@ -129,6 +140,55 @@ async def get_books():
         return books
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@app.get(
+    "/api/books/scan",
+    tags=["Books"],
+    summary="Scan stories folder",
+    description="Scan the stories folder for txt files and add new books to database"
+)
+async def scan_stories_folder_endpoint():
+    """
+    Scan the stories folder and sync database with found txt files.
+    
+    Returns:
+        dict with scan results
+    """
+    try:
+        from file_loader import scan_stories_folder
+        
+        # Get all txt files in stories folder
+        found_stories = scan_stories_folder()
+        
+        # Get existing books from database
+        existing_books = database.get_all_books()
+        existing_paths = {book['url'] for book in existing_books}  # Column is 'url', not 'book_url'
+        
+        # Add new stories to database
+        new_books = []
+        for story in found_stories:
+            if story['file_path'] not in existing_paths:
+                database.add_or_update_book(
+                    url=story['file_path'],
+                    name=story['title'],
+                    icon="📖"  # Generic book icon
+                )
+                new_books.append(story['title'])
+                print(f"Added new book: {story['title']} ({story['file_path']})")
+        
+        message = f"Scanned folder. Found {len(found_stories)} stories, added {len(new_books)} new."
+        print(message)
+        
+        return {
+            "success": True,
+            "found": len(found_stories),
+            "new_books": new_books,
+            "message": message
+        }
+    except Exception as e:
+        print(f"Error scanning stories folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get(
@@ -350,6 +410,85 @@ async def get_character(character_id: int):
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
+# ==================== CHAT ENDPOINTS ====================
+
+@app.post(
+    "/api/chat/character/{character_id}",
+    response_model=ChatResponse,
+    tags=["Chat"],
+    summary="Chat with a character",
+    description="Send a message to a character and get a response in their persona"
+)
+async def chat_with_character_endpoint(character_id: int, request: ChatRequest):
+    """
+    Chat with a character using their AI persona.
+    
+    The character will respond based on their personality, backstory, and knowledge
+    from the book they're in. They can use the retrieve_book_info tool to look up
+    information they might not immediately remember.
+    
+    Args:
+        character_id: The character's unique ID
+        request: ChatRequest with message and optional chat history
+        
+    Returns:
+        ChatResponse with the character's response and updated history
+        
+    Example:
+        POST /api/chat/character/1
+        Body: {"message": "Hello! What do you like to do?", "chat_history": []}
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"Chat request for character ID: {character_id}")
+        print(f"User message: {request.message}")
+        print(f"{'='*60}\n")
+        
+        # Convert Pydantic chat history to dict format
+        chat_history_dicts = [
+            {"role": msg.role, "content": msg.content}
+            for msg in request.chat_history
+        ]
+        
+        # Call the chat function from main.py
+        from main import chat_with_character
+        result = chat_with_character(
+            character_id=character_id,
+            user_message=request.message,
+            chat_history=chat_history_dicts
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Unknown error during chat")
+            )
+        
+        # Convert dict chat history back to Pydantic models
+        chat_history_models = [
+            ChatMessage(role=msg["role"], content=msg["content"])
+            for msg in result["chat_history"]
+        ]
+        
+        return ChatResponse(
+            success=True,
+            character_name=result["character_name"],
+            response=result["response"],
+            chat_history=chat_history_models,
+            error=None
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error during chat: {str(e)}"
+        )
+
+
 # ==================== PROFILE GENERATION ENDPOINTS ====================
 
 @app.post(
@@ -378,6 +517,18 @@ async def generate_profiles(request: GenerateRequest, background_tasks: Backgrou
         - Generation happens in the background
         - Check /api/generate/status to monitor progress
     """
+    # Verify file exists
+    file_path = request.book_url  # Now a file path, not a doc ID
+    try:
+        from file_loader import STORIES_DIR
+        full_path = STORIES_DIR / file_path
+        if not full_path.exists():
+            raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Error checking file: {str(e)}")
+    
     with generation_status["lock"]:
         if generation_status["is_running"]:
             return GenerateResponse(
@@ -425,7 +576,134 @@ async def get_generation_status():
             is_running=generation_status["is_running"],
             book_url=generation_status["book_url"],
             started_at=generation_status["started_at"],
-            message=generation_status["message"]
+            message=generation_status["message"],
+            error=generation_status.get("error")
+        )
+
+
+# ==================== ACTIVE MONITORING ENDPOINT ====================
+
+@app.post(
+    "/api/books/{book_url}/check-changes",
+    response_model=DocumentChangeResponse,
+    tags=["Monitoring"],
+    summary="Check file for changes",
+    description="Check if a local txt file has changed and update character profiles if needed"
+)
+async def check_document_changes(book_url: str):
+    """
+    Check a local txt file for changes and update character profiles.
+    
+    This endpoint is used for manual refresh by the frontend.
+    It will:
+    1. Check if profile generation is running (abort if yes)
+    2. Check the file for changes via modification time
+    3. Re-index only changed chunks
+    4. Update existing character profiles if changes detected
+    
+    Args:
+        book_url: The txt file path to check (e.g., "story1.txt")
+        
+    Returns:
+        DocumentChangeResponse with change summary
+        
+    Note:
+        - Cannot run while profile generation is in progress
+        - Only updates existing characters (doesn't find new ones)
+        - Uses hash-based change detection for efficiency
+    """
+    print(f"\n{'='*60}")
+    print(f"📡 API: Check changes request for file: {book_url}")
+    print(f"{'='*60}")
+    
+    try:
+        # Verify file exists
+        from file_loader import STORIES_DIR
+        full_path = STORIES_DIR / book_url
+        if not full_path.exists():
+            return DocumentChangeResponse(
+                changed=False,
+                chunks_added=0,
+                chunks_deleted=0,
+                characters_updated=[],
+                characters_removed=[],
+                last_modified="",
+                message="File not found",
+                error=f"File not found: {book_url}"
+            )
+        
+        # Check if profile generation is currently running
+        with generation_status["lock"]:
+            if generation_status["is_running"]:
+                return DocumentChangeResponse(
+                    changed=False,
+                    chunks_added=0,
+                    chunks_deleted=0,
+                    characters_updated=[],
+                    characters_removed=[],
+                    last_modified="",
+                    message="Profile generation in progress",
+                    error="Cannot check changes while profile generation is running"
+                )
+        
+        # Import here to avoid circular dependencies
+        from main import check_and_update_document, update_existing_profiles, rag_state
+        
+        # Check for document changes (will auto-initialize if needed)
+        change_result = check_and_update_document(book_url)
+        
+        characters_updated = []
+        
+        characters_removed = []
+        
+        # If changes detected, update character profiles
+        if change_result["changed"]:
+            print(f"✨ Changes detected! Updating character profiles...")
+            
+            # Get changed chunks for character filtering
+            changed_chunks = change_result.get("changed_chunks_text", [])
+            
+            # Pass changed chunks to filter relevant characters
+            update_result = update_existing_profiles(book_url, changed_chunks)
+            
+            print(f"📊 Update result: {update_result}")
+            
+            if update_result["success"]:
+                characters_updated = update_result.get("characters_updated", [])
+                print(f"✅ Successfully updated {len(characters_updated)} characters")
+        
+        # Clean up characters no longer in the document (always run)
+        full_document_text = change_result.get("full_document_text", "")
+        if full_document_text:
+            from main import cleanup_removed_characters
+            cleanup_result = cleanup_removed_characters(book_url, full_document_text)
+            if cleanup_result["success"]:
+                characters_removed = cleanup_result.get("characters_removed", [])
+                print(f"🧹 Removed {len(characters_removed)} characters no longer in document")
+        
+        return DocumentChangeResponse(
+            changed=change_result["changed"],
+            chunks_added=change_result["chunks_added"],
+            chunks_deleted=change_result["chunks_deleted"],
+            characters_updated=characters_updated,
+            characters_removed=characters_removed,
+            last_modified=change_result["last_modified"],
+            message=f"Check complete. {'Changes detected and profiles updated.' if change_result['changed'] else 'No changes detected.'}",
+            error=None
+        )
+        
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Error checking document changes: {error_msg}")
+        return DocumentChangeResponse(
+            changed=False,
+            chunks_added=0,
+            chunks_deleted=0,
+            characters_updated=[],
+            characters_removed=[],
+            last_modified="",
+            message="Error checking document",
+            error=error_msg
         )
 
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../models/book_item.dart';
 import '../../../icons/svgs.dart';
 import '../../../style.dart';
+import '../../../api/api_service.dart';
 import "app_text_field.dart";
 
 class AddItemDialog extends StatefulWidget {
@@ -14,8 +15,10 @@ class AddItemDialog extends StatefulWidget {
 class _AddItemDialogState extends State<AddItemDialog> {
   final _nameController = TextEditingController();
   final _urlController = TextEditingController();
+  final _apiService = ApiService();
 
   IconData? _selectedIcon;
+  bool _isLoading = false;
 
   // A list of selectable icons for the user.
   final List<IconData> _selectableIcons = publicIconMap.values.toList();
@@ -44,17 +47,92 @@ class _AddItemDialogState extends State<AddItemDialog> {
     return null;
   }
 
-  void _submit() {
+  void _submit() async {
     final name = _nameController.text;
     final url = _urlController.text;
-    // Ensure a name has been entered and an icon has been selected
-    if (name.isNotEmpty && url.isNotEmpty && _selectedIcon != null) {
-      final docId = extractGoogleDocId(url);
-      if (docId == null) return;
-      final newItem = BookItem(name: name, icon: _selectedIcon!, docId: docId);
-      // Pop the dialog and return the new item
-      Navigator.of(context).pop(newItem);
+
+    // Validate inputs
+    if (name.isEmpty || url.isEmpty || _selectedIcon == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill in all fields and select an icon'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
     }
+
+    final docId = extractGoogleDocId(url);
+    if (docId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid Google Docs URL'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Show loading state
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Get icon name for API
+      final iconName = _getIconName(_selectedIcon!);
+
+      // Call API to upload book and trigger generation
+      final result = await _apiService.uploadNewBook(docId, name, iconName);
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        // Create book item with processing flag
+        final newItem = BookItem(
+          name: name,
+          icon: _selectedIcon!,
+          docId: docId,
+          isProcessing: true,
+        );
+
+        // Pop the dialog and return the new item
+        Navigator.of(context).pop(newItem);
+      } else {
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Failed to upload book'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _getIconName(IconData icon) {
+    // Find the icon name from the icon map
+    for (var entry in publicIconMap.entries) {
+      if (entry.value == icon) {
+        return entry.key;
+      }
+    }
+    return 'error';
   }
 
   @override
@@ -174,12 +252,21 @@ class _AddItemDialogState extends State<AddItemDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
           child: const Text('Cancel', style: TextStyle(color: Colors.white)),
         ),
         ElevatedButton(
-          onPressed: _submit,
-          child: const Text('Add', style: TextStyle(color: Colors.black)),
+          onPressed: _isLoading ? null : _submit,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                  ),
+                )
+              : const Text('Add', style: TextStyle(color: Colors.black)),
         ),
       ],
     );

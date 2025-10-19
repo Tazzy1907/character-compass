@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../api/api_service.dart';
 import '../../models/character_details.dart';
 import '../../style.dart';
+import 'chat_screen.dart';
 
 class CharacterScreen extends StatefulWidget {
   final int characterId;
@@ -55,13 +56,13 @@ class _CharacterScreenState extends State<CharacterScreen>
     }
   }
 
-  void _showChatPlaceholder() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Chat with ${_character?.name ?? "character"} (Coming soon!)',
-        ),
-        duration: const Duration(seconds: 2),
+  void _openChat() {
+    if (_character == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(character: _character!),
       ),
     );
   }
@@ -69,6 +70,28 @@ class _CharacterScreenState extends State<CharacterScreen>
   String _capitalize(String text) {
     if (text.isEmpty) return text;
     return text[0].toUpperCase() + text.substring(1);
+  }
+
+  bool _shouldShowChatButton() {
+    if (_character == null) return false;
+
+    // Don't show chat for side characters
+    if (_character!.characterType.toLowerCase() == 'side') {
+      return false;
+    }
+
+    // Don't show chat if character has no meaningful information
+    bool hasAnyInfo =
+        _character!.hasPersonality ||
+        _character!.hasAppearance ||
+        _character!.hasBackstory ||
+        _character!.hasRelationships ||
+        _character!.hasGoals ||
+        _character!.hasMotivations ||
+        _character!.age != null ||
+        (_character!.occupation != null && _character!.occupation!.isNotEmpty);
+
+    return hasAnyInfo;
   }
 
   @override
@@ -96,9 +119,9 @@ class _CharacterScreenState extends State<CharacterScreen>
         ),
       ),
       body: _buildBody(),
-      floatingActionButton: _character != null
+      floatingActionButton: _shouldShowChatButton()
           ? FloatingActionButton.extended(
-              onPressed: _showChatPlaceholder,
+              onPressed: _openChat,
               backgroundColor: highlightColor,
               icon: const Icon(Icons.chat_bubble, color: Colors.white),
               label: const Text("Chat", style: TextStyle(color: Colors.white)),

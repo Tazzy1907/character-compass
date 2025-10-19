@@ -14,7 +14,8 @@ from langchain.agents import create_agent
 
 # Local Imports
 from char_info import CharacterProfile, CharacterList
-from docs_api import get_doc_content, get_drive_service
+from file_loader import get_story_content, get_file_modified_time, scan_stories_folder
+from persona import createPersonaAgent
 import database
 
 # Tools
@@ -31,11 +32,7 @@ api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OPENAI_API_KEY is not set")
 
-llm = ChatOpenAI(api_key=api_key, model="gpt-5-mini", stream_usage=True)
-
-# EXAMPLE DOCUMENT ID.
-DOC_ID = '1DN04wAju6_XflgjVXj4grRSlsA9w7Xmv_cRVB7w1d84'
-DOC_POLL_INTERVAL = 60 # Check the google doc for changes every 60 seconds.
+llm = ChatOpenAI(api_key=api_key, model="gpt-4o", temperature=0.05, stream_usage=True)
 
 # Store state of RAG components.
 class RAGState:
@@ -45,24 +42,30 @@ class RAGState:
         self.old_split_hashes = set()
         self.lock = threading.Lock()
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        self.current_doc_id = None
+        self.monitor_thread = None
+        self.stop_monitoring = threading.Event()
 
 rag_state = RAGState()
 
 def hash_chunk(chunk_text):
     return hashlib.md5(chunk_text.encode('utf-8')).hexdigest()
 
-def initialise_rag_system():
+def initialise_rag_system(file_path: str):
     """
     Performs initialisation of the RAG system, including loading, splitting, embed, and agent creation.
+    
+    Args:
+        file_path: The txt file path (e.g., "story1.txt")
     """
-    print("Initialising RAG system...")
+    print(f"Initialising RAG system for file: {file_path}...")
 
     try:
-        client = get_drive_service()
-        file_metadata = client.files().get(fileId=DOC_ID, fields='modifiedTime').execute()
-
-        # Get initial content.
-        documents_text = get_doc_content(DOC_ID)
+        # Get initial content from local txt file
+        documents_text = get_story_content(file_path)
+        
+        if not documents_text:
+            raise Exception(f"Failed to read file: {file_path}")
 
         # Split text and create documents with hashed IDs.
         splits = rag_state.text_splitter.split_text(documents_text)
@@ -83,79 +86,149 @@ def initialise_rag_system():
             ids=ids_to_embed
         )
         
-        rag_state.last_known_mod_time = file_metadata.get('modifiedTime')
+        # Store file path and modification time
+        rag_state.last_known_mod_time = get_file_modified_time(file_path)
+        rag_state.current_doc_id = file_path
         print(f"RAG System Initialised. {len(ids_to_embed)} chunks indexed.")
 
     except Exception as e:
         print(f"Error initializing RAG system: {e}")
-        exit(1)
+        raise e
 
-def monitor_document_changes():
+def check_and_update_document(file_path: str) -> dict:
     """
-    A loop that runs in the background and monitors the document for changes.
+    Check local file for changes and update vectorstore if needed.
+    
+    Args:
+        file_path: The txt file path to check (e.g., "story1.txt")
+        
+    Returns:
+        dict: Summary of changes made
     """
-    client = get_drive_service()
+    try:
+        print(f"\n🔍 Checking file {file_path} for changes...")
+        
+        # If RAG system not initialized or wrong file, initialize it
+        if rag_state.vectorstore is None or rag_state.current_doc_id != file_path:
+            print(f"⚠️  RAG system not initialized for {file_path}. Initializing...")
+            initialise_rag_system(file_path)
+            create_tools()
+            create_agents()
+            print(f"✓ RAG system initialized for {file_path}")
+            return {
+                "changed": False,
+                "chunks_added": 0,
+                "chunks_deleted": 0,
+                "last_modified": str(rag_state.last_known_mod_time),
+                "message": "RAG system initialized"
+            }
+        
+        # Check file modification time
+        current_mod_time = get_file_modified_time(file_path)
+        
+        print(f"📅 Current mod time: {current_mod_time}")
+        print(f"📅 Last known mod time: {rag_state.last_known_mod_time}")
+        
+        # No changes detected
+        if current_mod_time == rag_state.last_known_mod_time:
+            print("✓ No changes detected (file not modified)")
+            return {
+                "changed": False,
+                "chunks_added": 0,
+                "chunks_deleted": 0,
+                "last_modified": str(current_mod_time)
+            }
+        
+        print(f"File changed at {current_mod_time}. Reindexing...")
+        
+        # Get new content from local file
+        new_documents_text = get_story_content(file_path)
+        if not new_documents_text:
+            raise Exception("Failed to fetch document content")
+        
+        # Split and hash new content
+        new_splits = rag_state.text_splitter.split_text(new_documents_text)
+        new_split_hashes = set()
+        new_split_map = {}
+        
+        for split in new_splits:
+            chunk_hash = hash_chunk(split)
+            new_split_hashes.add(chunk_hash)
+            new_split_map[chunk_hash] = split
+        
+        # Calculate diff
+        hashes_to_add = new_split_hashes - rag_state.old_split_hashes
+        hashes_to_delete = rag_state.old_split_hashes - new_split_hashes
+        
+        # Store changed chunk text for character filtering
+        changed_chunks_text = []
+        
+        # Update vector store
+        with rag_state.lock:
+            if hashes_to_delete:
+                rag_state.vectorstore.delete(ids=list(hashes_to_delete))
+                print(f"Deleted {len(hashes_to_delete)} old chunks.")
+            
+            if hashes_to_add:
+                texts_to_add = [new_split_map[h] for h in hashes_to_add]
+                changed_chunks_text = texts_to_add  # Save for character filtering
+                ids_to_add = list(hashes_to_add)
+                rag_state.vectorstore.add_texts(
+                    texts=texts_to_add,
+                    ids=ids_to_add
+                )
+                print(f"Added {len(hashes_to_add)} new chunks.")
+            
+            # Update state
+            rag_state.old_split_hashes = new_split_hashes
+            rag_state.last_known_mod_time = current_mod_time
+        
+        print("Document reindexed successfully.")
+        
+        return {
+            "changed": True,
+            "chunks_added": len(hashes_to_add),
+            "chunks_deleted": len(hashes_to_delete),
+            "last_modified": str(current_mod_time),
+            "changed_chunks_text": changed_chunks_text,
+            "full_document_text": new_documents_text  # For character cleanup
+        }
+        
+    except Exception as e:
+        print(f"Error checking document changes: {e}")
+        raise e
 
-    while True:
-        try:
-            time.sleep(DOC_POLL_INTERVAL)
+# Monitoring functions removed - using manual refresh instead
 
-            # Check for changes.
-            file_metadata = client.files().get(fileId=DOC_ID, fields='modifiedTime').execute()
-            current_mod_time = file_metadata.get('modifiedTime')
-
-            if current_mod_time == rag_state.last_known_mod_time:
-                continue
-
-            print(f"Document changed at {current_mod_time}. Reindexing...")
-
-            new_documents_text = get_doc_content(DOC_ID)
-
-            new_splits = rag_state.text_splitter.split_text(new_documents_text)
-            new_split_hashes = set()
-            new_split_map = {}
-
-            for split in new_splits:
-                chunk_hash = hash_chunk(split)
-                new_split_hashes.add(chunk_hash)
-                new_split_map[chunk_hash] = split
-
-            # Calculate diff
-            hashes_to_add = new_split_hashes - rag_state.old_split_hashes
-            hashes_to_delete = rag_state.old_split_hashes - new_split_hashes
-
-            # Get update lock.
-            with rag_state.lock:
-                # Update vector store.
-                if hashes_to_delete:
-                    rag_state.vectorstore.delete(ids=hashes_to_delete)
-                    print(f"Deleted {len(hashes_to_delete)} old chunks.")
-                
-                if hashes_to_add:
-                    texts_to_add = [new_split_map[h] for h in hashes_to_add]
-                    ids_to_add = list(hashes_to_add)
-                    rag_state.vectorstore.add_texts(
-                        texts=texts_to_add,
-                        ids=ids_to_add
-                    )
-                    print(f"Added {len(hashes_to_add)} new chunks.")
-
-                # Update state for next poll
-                rag_state.old_split_hashes = new_split_hashes
-                rag_state.last_known_mod_time = current_mod_time
-
-            print("Document reindexed successfully.")
-
-        except Exception as e:
-            print(f"Error monitoring document changes: {e}")
-            continue
-
-def begin_change_monitoring():
+def reinitialize_rag_for_document(file_path: str):
     """
-    Begins monitoring the document for changes.
+    Re-initializes the RAG system for a new file.
+    Clears the vectorstore and re-indexes the specified file.
+    
+    Args:
+        file_path: The txt file path to index (e.g., "story1.txt")
     """
-    monitor_thread = threading.Thread(target=monitor_document_changes, daemon=True)
-    monitor_thread.start()
+    print(f"\n{'='*60}")
+    print(f"Re-initializing RAG system for file: {file_path}")
+    print(f"{'='*60}\n")
+    
+    # Clear existing state
+    with rag_state.lock:
+        rag_state.vectorstore = None
+        rag_state.last_known_mod_time = None
+        rag_state.old_split_hashes = set()
+        rag_state.current_doc_id = None
+    
+    # Initialize with new file
+    initialise_rag_system(file_path)
+    
+    # Recreate tools and agents with new vectorstore
+    create_tools()
+    create_agents()
+    
+    print(f"\n{'='*60}")
+    print(f"RAG system re-initialized successfully for {file_path}")
+    print(f"{'='*60}\n")
 
 # ------------------------------------------------------------ TOOLS ------------------------------------------------------------
 def create_tools():
@@ -184,8 +257,8 @@ def create_agents():
             system_prompt="""
             You are a helpful assistant who is an expert at analysing a book to build
             character profiles. Use the available tools to find the necessary information.
-            **ONLY** get information from the book.
-            If the information does not exist, do not make it up.
+            
+            You must ONLY use information available gotten from the retriever tool. NOWHERE ELSE.
             """,
             response_format=CharacterProfile
         )
@@ -203,6 +276,8 @@ def create_agents():
             to find all characters and categorize them.
             Your goal is to identify 'main_characters' and 'side_characters'.
             Use the available tools to find the necessary information from the book.
+
+            You must ONLY use information available gotten from the retriever tool. NOWHERE ELSE.
             """,
             response_format=CharacterList
         )
@@ -218,8 +293,8 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
     This function can be called from the API or run standalone.
     
     Args:
-        book_url: The Google Doc ID/URL for the book
-        book_name: Optional book name (defaults to "Sample Book")
+        book_url: The txt file path for the book (e.g., "story1.txt")
+        book_name: Optional book name (defaults to filename without extension)
         book_icon: Optional book icon path
         
     Returns:
@@ -233,12 +308,25 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
         # Ensure database is initialized
         database.initialize_database()
         
+        # If no book name provided, use filename without extension
+        if not book_name:
+            from pathlib import Path
+            book_name = Path(book_url).stem  # e.g., "story1.txt" -> "story1"
+        
         # Add/update book in database
         database.add_or_update_book(
             url=book_url,
-            name=book_name or "Sample Book",
+            name=book_name,
             icon=book_icon
         )
+        
+        # Delete all existing characters for this book to start fresh
+        print(f"Clearing existing characters for {book_url}...")
+        database.delete_characters_by_book(book_url)
+        print(f"✓ Existing characters cleared")
+        
+        # Re-initialize RAG system for this specific document
+        reinitialize_rag_for_document(book_url)
         
         # Check if agents are ready
         if not LISTER_AGENT or not PROFILE_AGENT:
@@ -303,7 +391,7 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
                 profile_response = PROFILE_AGENT.invoke({
                     "messages": [{
                         "role": "user",
-                        "content": f"Create a detailed character profile for the character {char_name}. Use your retriever tool to find information from the book. If information is not available, use None or empty values."
+                        "content": f"Create a detailed character profile for the character {char_name}. Use your retriever tool to find information from the book. Do NOT get information from your own knowledge or outside the receiver tool."
                     }]
                 })
                 
@@ -349,32 +437,306 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
             "error": error_msg
         }
 
-# Main loop.
-if __name__ == "__main__":
-    # Startup
-    initialise_rag_system()
-    # Separate monitoring thread in the background.
-    begin_change_monitoring()
-
-    # Create tools and agents.
-    create_tools()
-    create_agents()
-
-    print("\n--- Live Character Profile Assistant ---")
-
-    # Run profile generation
+def cleanup_removed_characters(book_url: str, full_document_text: str) -> dict:
+    """
+    Remove characters from database that are no longer mentioned in the document.
+    
+    Args:
+        book_url: The Google Doc ID/URL for the book
+        full_document_text: The complete current text of the document
+        
+    Returns:
+        dict: Summary of characters removed
+    """
     try:
-        result = generate_profiles_for_book(
-            book_url=DOC_ID,
-            book_name="Sample Book",  # TODO: Update with actual book title
-            book_icon=None  # TODO: Add book icon path if available
+        print(f"\n🧹 Checking for characters to remove from {book_url}...")
+        
+        # Get all existing characters for this book
+        existing_characters = database.get_characters_by_book(book_url)
+        
+        if not existing_characters:
+            print("No characters in database to check.")
+            return {
+                "success": True,
+                "characters_removed": [],
+                "message": "No characters to check"
+            }
+        
+        document_text_lower = full_document_text.lower()
+        characters_to_remove = []
+        
+        # Check each character to see if they're still mentioned
+        for char in existing_characters:
+            char_name = char['name']
+            
+            # Check if character name appears in the document
+            if char_name.lower() not in document_text_lower:
+                characters_to_remove.append(char_name)
+                print(f"   ❌ '{char_name}' no longer in document - will remove")
+            else:
+                print(f"   ✓ '{char_name}' still present")
+        
+        # Remove characters that are no longer in the document
+        removed_characters = []
+        for char_name in characters_to_remove:
+            try:
+                database.delete_character(char_name, book_url)
+                removed_characters.append(char_name)
+                print(f"   🗑️  Removed '{char_name}' from database")
+            except Exception as e:
+                print(f"   ⚠️  Failed to remove '{char_name}': {e}")
+        
+        if removed_characters:
+            print(f"\n🧹 Cleanup complete: Removed {len(removed_characters)} character(s)")
+        else:
+            print(f"\n✓ No characters need to be removed")
+        
+        return {
+            "success": True,
+            "characters_removed": removed_characters,
+            "message": f"Removed {len(removed_characters)} characters no longer in document"
+        }
+        
+    except Exception as e:
+        error_msg = f"Error during character cleanup: {str(e)}"
+        print(f"\n❌ {error_msg}\n")
+        return {
+            "success": False,
+            "error": error_msg,
+            "characters_removed": []
+        }
+
+def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict:
+    """
+    Update character profiles for existing characters when document changes.
+    
+    Args:
+        book_url: The Google Doc ID/URL for the book
+        changed_chunks: List of text chunks that changed (for filtering relevant characters)
+        
+    Returns:
+        dict: Summary of updates made
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"Updating existing profiles for book: {book_url}")
+        print(f"{'='*60}\n")
+        
+        # Ensure agents are initialized (they might not be after server restart)
+        if not PROFILE_AGENT:
+            print("⚠️  Profile agent not initialized. Creating agents...")
+            create_agents()
+            if not PROFILE_AGENT:
+                return {
+                    "success": False,
+                    "error": "Failed to initialize profile agent"
+                }
+            print("✓ Agents created successfully")
+        
+        # Get existing characters from database
+        existing_characters = database.get_characters_by_book(book_url)
+        
+        if not existing_characters:
+            print("No existing characters to update.")
+            return {
+                "success": True,
+                "characters_updated": [],
+                "message": "No existing characters to update"
+            }
+        
+        print(f"Found {len(existing_characters)} existing characters in database.")
+        
+        # Filter characters based on changed chunks
+        if changed_chunks:
+            # Combine all changed text
+            changed_text = " ".join(changed_chunks).lower()
+            
+            print(f"📄 Changed chunks preview (first 200 chars):")
+            print(f"   {changed_text[:200]}...")
+            
+            # Only update characters mentioned in changed chunks
+            characters_to_update = [
+                char for char in existing_characters
+                if char['name'].lower() in changed_text
+            ]
+            
+            print(f"📝 Filtered to {len(characters_to_update)} characters mentioned in changed chunks:")
+            for char in characters_to_update:
+                print(f"   - {char['name']}")
+            
+            # Fallback: If no characters match, update all as a safety measure
+            if len(characters_to_update) == 0:
+                print(f"⚠️  WARNING: No characters matched the filter!")
+                print(f"⚠️  Character names in DB: {[c['name'] for c in existing_characters]}")
+                print(f"⚠️  Falling back to updating ALL characters to ensure database stays current")
+                characters_to_update = existing_characters
+        else:
+            # No new chunks added (only deletions or no changes) - skip profile updates
+            characters_to_update = []
+            print(f"ℹ️  No new chunks added - skipping profile updates (cleanup handles deletions)")
+        
+        updated_characters = []
+        failed_updates = []
+        
+        print(f"\n🔄 Starting update loop for {len(characters_to_update)} character(s)...")
+        
+        # Update each filtered character
+        for char_data in characters_to_update:
+            char_name = char_data['name']
+            char_type = char_data['character_type']
+            
+            print(f"Updating profile for {char_name}...")
+            
+            try:
+                profile_response = PROFILE_AGENT.invoke({
+                    "messages": [{
+                        "role": "user",
+                        "content": f"Create a detailed character profile for the character {char_name}. Use your retriever tool to find information from the book. If information is not available, use None or empty values."
+                    }]
+                })
+                
+                character_profile = profile_response.get('structured_response')
+                
+                if isinstance(character_profile, CharacterProfile):
+                    # Update character in database
+                    print(f"💾 Writing {char_name} to database...")
+                    database.add_or_update_character(
+                        profile=character_profile,
+                        book_url=book_url,
+                        character_type=char_type
+                    )
+                    updated_characters.append(char_name)
+                    print(f"✓ Successfully updated {char_name} in database")
+                else:
+                    print(f"✗ Failed to get valid profile for {char_name}")
+                    failed_updates.append(char_name)
+                
+                # Rate limiting - space out OpenAI API calls to avoid rate limits
+                # (This is separate from frontend's 60-second monitoring interval)
+                time.sleep(3)
+                
+            except Exception as e:
+                print(f"Error updating profile for {char_name}: {e}")
+                failed_updates.append(char_name)
+        
+        print(f"\n{'='*60}")
+        print(f"Profile updates complete!")
+        print(f"Updated: {len(updated_characters)} | Failed: {len(failed_updates)}")
+        print(f"{'='*60}\n")
+        
+        return {
+            "success": True,
+            "characters_updated": updated_characters,
+            "characters_failed": failed_updates,
+            "message": f"Updated {len(updated_characters)} characters"
+        }
+        
+    except Exception as e:
+        error_msg = f"Error updating profiles: {str(e)}"
+        print(f"\n❌ {error_msg}\n")
+        return {
+            "success": False,
+            "error": error_msg,
+            "characters_updated": []
+        }
+
+# ------------------------------------------------------------ CHARACTER CHAT ------------------------------------------------------------
+def chat_with_character(character_id: int, user_message: str, chat_history: list = None):
+    """
+    Chat with a character using their persona agent.
+    
+    Args:
+        character_id: ID of the character to chat with
+        user_message: The user's message
+        chat_history: List of previous messages in format [{"role": "user/assistant", "content": "..."}]
+        
+    Returns:
+        dict: Contains the character's response and updated chat history
+    """
+    try:
+        print(f"\n💬 Chat request for character ID: {character_id}")
+        
+        # Get character from database
+        character_data = database.get_character_by_id(character_id)
+        if not character_data:
+            raise Exception(f"Character with ID {character_id} not found")
+        
+        # Convert database character to CharacterProfile
+        character_profile = CharacterProfile(
+            name=character_data['name'],
+            age=character_data['age'],
+            gender=character_data['gender'],
+            sex=character_data['sex'],
+            race=character_data['race'],
+            occupation=character_data['occupation'],
+            personality=character_data['personality'],
+            appearance=character_data['appearance'],
+            backstory=character_data['backstory'],
+            relationships=character_data['relationships'],
+            goals=character_data['goals'],
+            motivations=character_data['motivations']
         )
         
-        if result["success"]:
-            print("\n=== All character profiles created successfully! ===")
-        else:
-            print(f"\n❌ Profile generation failed: {result.get('error')}")
-            
-    except KeyboardInterrupt:
-        print("\nExiting...")
-        exit(0)
+        print(f"✓ Loaded character profile for: {character_profile.name}")
+        
+        # Ensure RAG system and tools are initialized for the character's book
+        book_url = character_data['book_url']
+        if rag_state.vectorstore is None or rag_state.current_doc_id != book_url:
+            print(f"⚠️  Initializing RAG system for book: {book_url}")
+            initialise_rag_system(book_url)
+            create_tools()
+        
+        # Create persona agent for this character
+        print(f"🤖 Creating persona agent for {character_profile.name}")
+        persona_agent = createPersonaAgent(llm, character_profile, [RETRIEVER_TOOL])
+        
+        # Initialize or use existing chat history
+        if chat_history is None:
+            chat_history = []
+        
+        # Add user's message to history
+        chat_history.append({"role": "user", "content": user_message})
+        
+        print(f"📨 User: {user_message}")
+        
+        # Invoke persona agent
+        response = persona_agent.invoke({
+            "messages": chat_history
+        })
+        
+        # Extract AI's response
+        ai_message = response['messages'][-1]
+        ai_content = ai_message.content
+        
+        print(f"🎭 {character_profile.name}: {ai_content}")
+        
+        # Add AI's response to history
+        chat_history.append({"role": "assistant", "content": ai_content})
+        
+        return {
+            "success": True,
+            "character_name": character_profile.name,
+            "response": ai_content,
+            "chat_history": chat_history
+        }
+        
+    except Exception as e:
+        error_msg = f"Error in chat: {str(e)}"
+        print(f"\n❌ {error_msg}\n")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": error_msg,
+            "response": None,
+            "chat_history": chat_history or []
+        }
+
+# Main loop - no longer used with local file system
+# Use api.py to start the FastAPI server instead
+if __name__ == "__main__":
+    print("\n--- Character Compass RAG System ---")
+    print("This module provides RAG functionality for character profile generation.")
+    print("To use the system, run api.py to start the FastAPI server.")
+    print("\nExample: python backend/src/api.py")
+    print("\nThen use the frontend to scan stories and generate profiles.")
