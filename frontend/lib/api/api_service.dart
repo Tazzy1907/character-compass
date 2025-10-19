@@ -68,8 +68,10 @@ class ApiService {
       if (response.statusCode == 200) {
         final Map<String, dynamic> jsonResponse = json.decode(response.body);
         print(jsonResponse);
-        return jsonResponse['characters']
-            .map((data) => CharacterItem.fromJson(data))
+        final List<dynamic> charactersJson =
+            jsonResponse['characters'] as List<dynamic>;
+        return charactersJson
+            .map((data) => CharacterItem.fromJson(data as Map<String, dynamic>))
             .toList();
       } else {
         throw Exception('Failed to load items from API');

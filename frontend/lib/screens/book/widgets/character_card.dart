@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/style.dart';
 import '../../../models/character_item.dart';
-import '../../book/book_screen.dart';
+import '../../character/character_screen.dart';
 
 // The card widget is now in its own file.
 class CharacterCard extends StatelessWidget {
@@ -17,13 +16,11 @@ class CharacterCard extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
       child: InkWell(
         onTap: () {
-          print("Tapped on ${item.name}");
+          print("Tapped on ${item.name} (ID: ${item.id})");
           Navigator.push(
             context,
             MaterialPageRoute(
-              // Create an instance of DetailPage and
-              // pass the value to its 'message' constructor parameter
-              builder: (context) => BookScreen(bookId: ""),
+              builder: (context) => CharacterScreen(characterId: item.id),
             ),
           );
         },
