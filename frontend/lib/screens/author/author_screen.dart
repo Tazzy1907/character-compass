@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'widgets/responsive_icon_grid.dart';
-import 'widgets/add_item_dialog.dart';
 import '../../models/book_item.dart';
 import '../../api/api_service.dart';
 import '../../style.dart';
@@ -20,8 +21,6 @@ class _AuthorScreenState extends State<AuthorScreen> {
   String? _error;
   bool _isLoading = true;
   Timer? _statusCheckTimer;
-  String? _activelyMonitoredBookId;
-  Timer? _activeMonitoringTimer;
 
   @override
   void initState() {
@@ -33,7 +32,6 @@ class _AuthorScreenState extends State<AuthorScreen> {
   @override
   void dispose() {
     _statusCheckTimer?.cancel();
-    _activeMonitoringTimer?.cancel();
     super.dispose();
   }
 
@@ -99,17 +97,6 @@ class _AuthorScreenState extends State<AuthorScreen> {
   }
 
   // Adds a new item to the list and rebuilds the UI.
-  void _addItem(BookItem newItem) {
-    setState(() {
-      _items?.add(newItem);
-    });
-
-    // If the new item is processing, start polling
-    if (newItem.isProcessing) {
-      _startStatusPolling();
-    }
-  }
-
   // Start polling for generation status
   void _startStatusPolling() {
     // Cancel existing timer if any
@@ -195,98 +182,10 @@ class _AuthorScreenState extends State<AuthorScreen> {
     }
   }
 
-  // Start active monitoring for a book
-  void _startActiveMonitoring(String docId) {
-    // Don't start if already monitoring this book
-    if (_activelyMonitoredBookId == docId) return;
-
-    // Stop any existing monitoring
-    _stopActiveMonitoring();
-
-    // Check if book is processing
-    final book = _items?.firstWhere(
-      (item) => item.docId == docId,
-      orElse: () => _items!.first,
-    );
-
-    if (book != null && book.isProcessing) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot monitor while profiles are being generated'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    // Set active monitoring state
-    setState(() {
-      _activelyMonitoredBookId = docId;
-
-      // Update the book item to show monitoring state
-      if (_items != null) {
-        for (int i = 0; i < _items!.length; i++) {
-          if (_items![i].docId == docId) {
-            _items![i] = _items![i].copyWith(isActivelyMonitored: true);
-          } else {
-            // Ensure other books are not marked as monitored
-            _items![i] = _items![i].copyWith(isActivelyMonitored: false);
-          }
-        }
-      }
-    });
-
-    // Start polling every 15 seconds
-    print('⏰ Starting monitoring timer for $docId - checks every 15 seconds');
-    _activeMonitoringTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      print('⏰ Timer fired - checking for changes');
-      _checkActiveBookForChanges();
-    });
-
-    // Also do an immediate check
-    print('🔄 Performing immediate initial check');
-    _checkActiveBookForChanges();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Now monitoring ${book?.name ?? 'book'} for changes'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
-  // Stop active monitoring
-  void _stopActiveMonitoring() {
-    if (_activelyMonitoredBookId == null) return;
-
-    _activeMonitoringTimer?.cancel();
-
-    setState(() {
-      // Update the book item to remove monitoring state
-      if (_items != null) {
-        for (int i = 0; i < _items!.length; i++) {
-          if (_items![i].docId == _activelyMonitoredBookId) {
-            _items![i] = _items![i].copyWith(isActivelyMonitored: false);
-            break;
-          }
-        }
-      }
-      _activelyMonitoredBookId = null;
-    });
-  }
-
-  // Check actively monitored book for changes
-  Future<void> _checkActiveBookForChanges() async {
-    if (_activelyMonitoredBookId == null) return;
-
-    print('📊 Checking book for changes: $_activelyMonitoredBookId');
-
+  // Check a specific book for changes
+  Future<void> _checkBookForChanges(String filePath) async {
     try {
-      final result = await _apiService.checkDocumentChanges(
-        _activelyMonitoredBookId!,
-      );
-
-      print('📊 Check result: $result');
+      final result = await _apiService.checkDocumentChanges(filePath);
 
       if (!mounted) return;
 
@@ -294,22 +193,9 @@ class _AuthorScreenState extends State<AuthorScreen> {
 
       // Handle errors
       if (error != null) {
-        // Only stop monitoring for serious errors (generation in progress for THIS book)
-        // Backend will now auto-switch to the monitored book if needed
-        if (error.toString().contains('generation is running')) {
-          _stopActiveMonitoring();
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Monitoring stopped: Profile generation started'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        } else {
-          // For other errors, just log them and continue monitoring
-          // (will retry on next interval)
-          print('Error checking document (continuing monitoring): $error');
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $error'), backgroundColor: Colors.red),
+        );
         return;
       }
 
@@ -325,61 +211,135 @@ class _AuthorScreenState extends State<AuthorScreen> {
         final chunksDeleted = result['chunks_deleted'] ?? 0;
 
         // Build message with character changes
-        String message = 'Document updated! ';
+        String message = 'Changes detected! ';
         if (charactersUpdated.isNotEmpty) {
-          message += '${charactersUpdated.length} characters refreshed. ';
+          message += '${charactersUpdated.length} characters updated. ';
         }
         if (charactersRemoved.isNotEmpty) {
           message += '${charactersRemoved.length} characters removed. ';
         }
-        message += '($chunksAdded added, $chunksDeleted removed chunks)';
+        message += '($chunksAdded added, $chunksDeleted deleted chunks)';
 
-        // Show notification about changes
+        // Refresh book list to get updated data
+        await _fetchItems();
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
             backgroundColor: Colors.blue,
             duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'View',
-              textColor: Colors.white,
-              onPressed: () {
-                // Could navigate to the book screen here
-              },
-            ),
           ),
         );
-
-        // Refresh book list to get updated data
-        _fetchItems();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No changes detected'),
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
-      print('Error checking active book for changes: $e');
-      // Don't show error to user, will retry on next interval
-    }
-  }
-
-  // Toggle active monitoring for a book
-  void _toggleActiveMonitoring(String docId) {
-    if (_activelyMonitoredBookId == docId) {
-      _stopActiveMonitoring();
-    } else {
-      _startActiveMonitoring(docId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
   // Shows the dialog and waits for the user to submit a new item.
-  void _showAddItemDialog() async {
-    final newItem = await showDialog<BookItem>(
-      context: context,
-      builder: (BuildContext context) {
-        return const AddItemDialog();
-      },
-    );
+  // Generate character profiles for a book
+  Future<void> _generateProfiles(String filePath) async {
+    try {
+      // Call generate API
+      final response = await http.post(
+        Uri.parse('${_apiService.baseUrl}/api/generate'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'book_url': filePath,
+          'book_name': null,
+          'book_icon': null,
+        }),
+      );
 
-    // If the user created a new item, add it to the list.
-    if (newItem != null) {
-      _addItem(newItem);
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final result = json.decode(response.body);
+        if (result['success'] == true) {
+          // Mark book as processing
+          setState(() {
+            final bookIndex = _items?.indexWhere(
+              (item) => item.docId == filePath,
+            );
+            if (bookIndex != null && bookIndex >= 0) {
+              _items![bookIndex] = _items![bookIndex].copyWith(
+                isProcessing: true,
+              );
+            }
+          });
+
+          // Start polling for status
+          _startStatusPolling();
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Profile generation started for ${result['book_url']}',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message'] ?? 'Generation failed'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } else {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error starting generation: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Scan stories folder for new txt files
+  Future<void> _scanAndRefresh() async {
+    try {
+      // Call scan API
+      final result = await _apiService.scanStoriesFolder();
+
+      // Refresh book list
+      await _fetchItems();
+
+      // Show result
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Scan complete'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Scan failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -397,7 +357,8 @@ class _AuthorScreenState extends State<AuthorScreen> {
     // If data is loaded successfully, show the grid.
     return ResponsiveIconGrid(
       items: _items!,
-      onToggleMonitoring: _toggleActiveMonitoring,
+      onCheckChanges: _checkBookForChanges,
+      onGenerate: _generateProfiles,
     );
   }
 
@@ -422,14 +383,15 @@ class _AuthorScreenState extends State<AuthorScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Scan for new stories',
+            onPressed: _scanAndRefresh,
+          ),
+        ],
       ),
       body: _buildBody(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddItemDialog, // This now calls our dialog function
-        backgroundColor: highlightColor,
-        elevation: 10.0,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
     );
   }
 }

@@ -147,37 +147,29 @@ class ApiService {
     }
   }
 
-  // --- BOOK UPLOAD API METHODS ---
+  // --- BOOK SCAN API METHODS ---
 
-  /// Upload a new book and trigger profile generation
-  Future<Map<String, dynamic>> uploadNewBook(
-    String docId,
-    String bookName,
-    String iconName,
-  ) async {
-    final apiUrl = "$baseUrl/api/generate";
+  /// Scan the stories folder for new txt files
+  Future<Map<String, dynamic>> scanStoriesFolder() async {
+    final apiUrl = "$baseUrl/api/books/scan";
     try {
-      final response = await http.post(
-        Uri.parse(apiUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'book_url': docId,
-          'book_name': bookName,
-          'book_icon': iconName,
-        }),
-      );
+      final response = await http.get(Uri.parse(apiUrl));
 
       if (response.statusCode == 200) {
         final jsonResponse = json.decode(response.body);
         return {
           'success': jsonResponse['success'] ?? false,
+          'found': jsonResponse['found'] ?? 0,
+          'new_books': jsonResponse['new_books'] ?? [],
           'message': jsonResponse['message'] ?? '',
         };
       } else {
-        throw Exception('Failed to upload book: ${response.statusCode}');
+        throw Exception(
+          'Failed to scan stories folder: ${response.statusCode}',
+        );
       }
     } catch (e) {
-      throw Exception('Failed to upload book: $e');
+      throw Exception('Failed to scan stories folder: $e');
     }
   }
 

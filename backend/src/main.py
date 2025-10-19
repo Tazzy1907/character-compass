@@ -14,7 +14,7 @@ from langchain.agents import create_agent
 
 # Local Imports
 from char_info import CharacterProfile, CharacterList
-from docs_api import get_doc_content, get_drive_service
+from file_loader import get_story_content, get_file_modified_time, scan_stories_folder
 import database
 
 # Tools
@@ -33,10 +33,6 @@ if not api_key:
 
 llm = ChatOpenAI(api_key=api_key, model="gpt-5-mini", stream_usage=True)
 
-# EXAMPLE DOCUMENT ID.
-DOC_ID = '1DN04wAju6_XflgjVXj4grRSlsA9w7Xmv_cRVB7w1d84'
-DOC_POLL_INTERVAL = 60 # Check the google doc for changes every 60 seconds.
-
 # Store state of RAG components.
 class RAGState:
     def __init__(self):
@@ -54,21 +50,21 @@ rag_state = RAGState()
 def hash_chunk(chunk_text):
     return hashlib.md5(chunk_text.encode('utf-8')).hexdigest()
 
-def initialise_rag_system(doc_id: str):
+def initialise_rag_system(file_path: str):
     """
     Performs initialisation of the RAG system, including loading, splitting, embed, and agent creation.
     
     Args:
-        doc_id: The Google Doc ID to index
+        file_path: The txt file path (e.g., "story1.txt")
     """
-    print(f"Initialising RAG system for document {doc_id}...")
+    print(f"Initialising RAG system for file: {file_path}...")
 
     try:
-        client = get_drive_service()
-        file_metadata = client.files().get(fileId=doc_id, fields='modifiedTime').execute()
-
-        # Get initial content.
-        documents_text = get_doc_content(doc_id)
+        # Get initial content from local txt file
+        documents_text = get_story_content(file_path)
+        
+        if not documents_text:
+            raise Exception(f"Failed to read file: {file_path}")
 
         # Split text and create documents with hashed IDs.
         splits = rag_state.text_splitter.split_text(documents_text)
@@ -89,50 +85,63 @@ def initialise_rag_system(doc_id: str):
             ids=ids_to_embed
         )
         
-        rag_state.last_known_mod_time = file_metadata.get('modifiedTime')
-        rag_state.current_doc_id = doc_id
+        # Store file path and modification time
+        rag_state.last_known_mod_time = get_file_modified_time(file_path)
+        rag_state.current_doc_id = file_path
         print(f"RAG System Initialised. {len(ids_to_embed)} chunks indexed.")
 
     except Exception as e:
         print(f"Error initializing RAG system: {e}")
         raise e
 
-def check_and_update_document(doc_id: str) -> dict:
+def check_and_update_document(file_path: str) -> dict:
     """
-    Check document for changes and update vectorstore if needed.
+    Check local file for changes and update vectorstore if needed.
     
     Args:
-        doc_id: The Google Doc ID to check
+        file_path: The txt file path to check (e.g., "story1.txt")
         
     Returns:
         dict: Summary of changes made
     """
     try:
-        print(f"\n🔍 Checking document {doc_id} for changes...")
-        client = get_drive_service()
+        print(f"\n🔍 Checking file {file_path} for changes...")
         
-        # Check for changes
-        file_metadata = client.files().get(fileId=doc_id, fields='modifiedTime').execute()
-        current_mod_time = file_metadata.get('modifiedTime')
+        # If RAG system not initialized or wrong file, initialize it
+        if rag_state.vectorstore is None or rag_state.current_doc_id != file_path:
+            print(f"⚠️  RAG system not initialized for {file_path}. Initializing...")
+            initialise_rag_system(file_path)
+            create_tools()
+            create_agents()
+            print(f"✓ RAG system initialized for {file_path}")
+            return {
+                "changed": False,
+                "chunks_added": 0,
+                "chunks_deleted": 0,
+                "last_modified": str(rag_state.last_known_mod_time),
+                "message": "RAG system initialized"
+            }
+        
+        # Check file modification time
+        current_mod_time = get_file_modified_time(file_path)
         
         print(f"📅 Current mod time: {current_mod_time}")
         print(f"📅 Last known mod time: {rag_state.last_known_mod_time}")
         
         # No changes detected
         if current_mod_time == rag_state.last_known_mod_time:
-            print("✓ No changes detected (modifiedTime unchanged)")
-            print("💡 Tip: Google Drive may take 30-60 seconds to update modifiedTime after edits")
+            print("✓ No changes detected (file not modified)")
             return {
                 "changed": False,
                 "chunks_added": 0,
                 "chunks_deleted": 0,
-                "last_modified": current_mod_time
+                "last_modified": str(current_mod_time)
             }
         
-        print(f"Document changed at {current_mod_time}. Reindexing...")
+        print(f"File changed at {current_mod_time}. Reindexing...")
         
-        # Get new content
-        new_documents_text = get_doc_content(doc_id)
+        # Get new content from local file
+        new_documents_text = get_story_content(file_path)
         if not new_documents_text:
             raise Exception("Failed to fetch document content")
         
@@ -179,7 +188,7 @@ def check_and_update_document(doc_id: str) -> dict:
             "changed": True,
             "chunks_added": len(hashes_to_add),
             "chunks_deleted": len(hashes_to_delete),
-            "last_modified": current_mod_time,
+            "last_modified": str(current_mod_time),
             "changed_chunks_text": changed_chunks_text,
             "full_document_text": new_documents_text  # For character cleanup
         }
@@ -188,61 +197,19 @@ def check_and_update_document(doc_id: str) -> dict:
         print(f"Error checking document changes: {e}")
         raise e
 
-def monitor_document_changes():
-    """
-    A loop that runs in the background and monitors the document for changes.
-    """
-    while not rag_state.stop_monitoring.is_set():
-        try:
-            time.sleep(DOC_POLL_INTERVAL)
+# Monitoring functions removed - using manual refresh instead
 
-            # Check if monitoring should stop
-            if rag_state.stop_monitoring.is_set():
-                break
-
-            # Check if we have a document to monitor
-            if not rag_state.current_doc_id:
-                continue
-
-            # Use refactored function to check and update
-            check_and_update_document(rag_state.current_doc_id)
-
-        except Exception as e:
-            print(f"Error monitoring document changes: {e}")
-            continue
-
-def begin_change_monitoring():
+def reinitialize_rag_for_document(file_path: str):
     """
-    Begins monitoring the document for changes.
-    """
-    rag_state.stop_monitoring.clear()
-    rag_state.monitor_thread = threading.Thread(target=monitor_document_changes, daemon=True)
-    rag_state.monitor_thread.start()
-
-def stop_change_monitoring():
-    """
-    Stops the document monitoring thread.
-    """
-    if rag_state.monitor_thread and rag_state.monitor_thread.is_alive():
-        print("Stopping document monitoring...")
-        rag_state.stop_monitoring.set()
-        rag_state.monitor_thread.join(timeout=5)
-        print("Document monitoring stopped.")
-
-def reinitialize_rag_for_document(doc_id: str):
-    """
-    Re-initializes the RAG system for a new document.
-    This stops any existing monitoring, clears the vectorstore, and re-indexes the new document.
+    Re-initializes the RAG system for a new file.
+    Clears the vectorstore and re-indexes the specified file.
     
     Args:
-        doc_id: The Google Doc ID to index
+        file_path: The txt file path to index (e.g., "story1.txt")
     """
     print(f"\n{'='*60}")
-    print(f"Re-initializing RAG system for document: {doc_id}")
+    print(f"Re-initializing RAG system for file: {file_path}")
     print(f"{'='*60}\n")
-    
-    # Stop existing monitoring
-    stop_change_monitoring()
     
     # Clear existing state
     with rag_state.lock:
@@ -251,18 +218,15 @@ def reinitialize_rag_for_document(doc_id: str):
         rag_state.old_split_hashes = set()
         rag_state.current_doc_id = None
     
-    # Initialize with new document
-    initialise_rag_system(doc_id)
+    # Initialize with new file
+    initialise_rag_system(file_path)
     
     # Recreate tools and agents with new vectorstore
     create_tools()
     create_agents()
     
-    # Start monitoring the new document
-    begin_change_monitoring()
-    
     print(f"\n{'='*60}")
-    print(f"RAG system re-initialized successfully for {doc_id}")
+    print(f"RAG system re-initialized successfully for {file_path}")
     print(f"{'='*60}\n")
 
 # ------------------------------------------------------------ TOOLS ------------------------------------------------------------
@@ -328,8 +292,8 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
     This function can be called from the API or run standalone.
     
     Args:
-        book_url: The Google Doc ID/URL for the book
-        book_name: Optional book name (defaults to "Sample Book")
+        book_url: The txt file path for the book (e.g., "story1.txt")
+        book_name: Optional book name (defaults to filename without extension)
         book_icon: Optional book icon path
         
     Returns:
@@ -343,10 +307,15 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
         # Ensure database is initialized
         database.initialize_database()
         
+        # If no book name provided, use filename without extension
+        if not book_name:
+            from pathlib import Path
+            book_name = Path(book_url).stem  # e.g., "story1.txt" -> "story1"
+        
         # Add/update book in database
         database.add_or_update_book(
             url=book_url,
-            name=book_name or "Sample Book",
+            name=book_name,
             icon=book_icon
         )
         
@@ -661,33 +630,11 @@ def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict
             "characters_updated": []
         }
 
-# Main loop.
+# Main loop - no longer used with local file system
+# Use api.py to start the FastAPI server instead
 if __name__ == "__main__":
-    # Startup
-    initialise_rag_system(DOC_ID)
-    # Separate monitoring thread in the background.
-    begin_change_monitoring()
-
-    # Create tools and agents.
-    create_tools()
-    create_agents()
-
-    print("\n--- Live Character Profile Assistant ---")
-
-    # Run profile generation
-    try:
-        result = generate_profiles_for_book(
-            book_url=DOC_ID,
-            book_name="Sample Book",  # TODO: Update with actual book title
-            book_icon=None  # TODO: Add book icon path if available
-        )
-        
-        if result["success"]:
-            print("\n=== All character profiles created successfully! ===")
-        else:
-            print(f"\n❌ Profile generation failed: {result.get('error')}")
-            
-    except KeyboardInterrupt:
-        print("\nExiting...")
-        stop_change_monitoring()
-        exit(0)
+    print("\n--- Character Compass RAG System ---")
+    print("This module provides RAG functionality for character profile generation.")
+    print("To use the system, run api.py to start the FastAPI server.")
+    print("\nExample: python backend/src/api.py")
+    print("\nThen use the frontend to scan stories and generate profiles.")

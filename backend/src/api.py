@@ -140,6 +140,55 @@ async def get_books():
 
 
 @app.get(
+    "/api/books/scan",
+    tags=["Books"],
+    summary="Scan stories folder",
+    description="Scan the stories folder for txt files and add new books to database"
+)
+async def scan_stories_folder_endpoint():
+    """
+    Scan the stories folder and sync database with found txt files.
+    
+    Returns:
+        dict with scan results
+    """
+    try:
+        from file_loader import scan_stories_folder
+        
+        # Get all txt files in stories folder
+        found_stories = scan_stories_folder()
+        
+        # Get existing books from database
+        existing_books = database.get_all_books()
+        existing_paths = {book['url'] for book in existing_books}  # Column is 'url', not 'book_url'
+        
+        # Add new stories to database
+        new_books = []
+        for story in found_stories:
+            if story['file_path'] not in existing_paths:
+                database.add_or_update_book(
+                    url=story['file_path'],
+                    name=story['title'],
+                    icon="📖"  # Generic book icon
+                )
+                new_books.append(story['title'])
+                print(f"Added new book: {story['title']} ({story['file_path']})")
+        
+        message = f"Scanned folder. Found {len(found_stories)} stories, added {len(new_books)} new."
+        print(message)
+        
+        return {
+            "success": True,
+            "found": len(found_stories),
+            "new_books": new_books,
+            "message": message
+        }
+    except Exception as e:
+        print(f"Error scanning stories folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get(
     "/api/books/{book_url}",
     response_model=BookResponse,
     tags=["Books"],
@@ -386,6 +435,18 @@ async def generate_profiles(request: GenerateRequest, background_tasks: Backgrou
         - Generation happens in the background
         - Check /api/generate/status to monitor progress
     """
+    # Verify file exists
+    file_path = request.book_url  # Now a file path, not a doc ID
+    try:
+        from file_loader import STORIES_DIR
+        full_path = STORIES_DIR / file_path
+        if not full_path.exists():
+            raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Error checking file: {str(e)}")
+    
     with generation_status["lock"]:
         if generation_status["is_running"]:
             return GenerateResponse(
@@ -444,22 +505,22 @@ async def get_generation_status():
     "/api/books/{book_url}/check-changes",
     response_model=DocumentChangeResponse,
     tags=["Monitoring"],
-    summary="Check document for changes",
-    description="Check if a Google Doc has changed and update character profiles if needed"
+    summary="Check file for changes",
+    description="Check if a local txt file has changed and update character profiles if needed"
 )
 async def check_document_changes(book_url: str):
     """
-    Check a document for changes and update character profiles.
+    Check a local txt file for changes and update character profiles.
     
-    This endpoint is used for active monitoring by the frontend.
+    This endpoint is used for manual refresh by the frontend.
     It will:
     1. Check if profile generation is running (abort if yes)
-    2. Check the document for changes via Google Drive API
+    2. Check the file for changes via modification time
     3. Re-index only changed chunks
     4. Update existing character profiles if changes detected
     
     Args:
-        book_url: The Google Doc ID to check
+        book_url: The txt file path to check (e.g., "story1.txt")
         
     Returns:
         DocumentChangeResponse with change summary
@@ -470,10 +531,25 @@ async def check_document_changes(book_url: str):
         - Uses hash-based change detection for efficiency
     """
     print(f"\n{'='*60}")
-    print(f"📡 API: Check changes request for book: {book_url}")
+    print(f"📡 API: Check changes request for file: {book_url}")
     print(f"{'='*60}")
     
     try:
+        # Verify file exists
+        from file_loader import STORIES_DIR
+        full_path = STORIES_DIR / book_url
+        if not full_path.exists():
+            return DocumentChangeResponse(
+                changed=False,
+                chunks_added=0,
+                chunks_deleted=0,
+                characters_updated=[],
+                characters_removed=[],
+                last_modified="",
+                message="File not found",
+                error=f"File not found: {book_url}"
+            )
+        
         # Check if profile generation is currently running
         with generation_status["lock"]:
             if generation_status["is_running"]:
@@ -482,32 +558,16 @@ async def check_document_changes(book_url: str):
                     chunks_added=0,
                     chunks_deleted=0,
                     characters_updated=[],
+                    characters_removed=[],
                     last_modified="",
                     message="Profile generation in progress",
                     error="Cannot check changes while profile generation is running"
                 )
         
         # Import here to avoid circular dependencies
-        from main import check_and_update_document, update_existing_profiles, rag_state, reinitialize_rag_for_document
+        from main import check_and_update_document, update_existing_profiles, rag_state
         
-        # Check if this book is currently indexed
-        # If not, re-initialize RAG for this book (unless it's being used for generation)
-        if rag_state.current_doc_id != book_url:
-            print(f"Switching RAG context to monitored book: {book_url}")
-            try:
-                reinitialize_rag_for_document(book_url)
-            except Exception as e:
-                return DocumentChangeResponse(
-                    changed=False,
-                    chunks_added=0,
-                    chunks_deleted=0,
-                    characters_updated=[],
-                    last_modified="",
-                    message="Failed to switch to monitored book",
-                    error=f"Could not index book {book_url}: {str(e)}"
-                )
-        
-        # Check for document changes
+        # Check for document changes (will auto-initialize if needed)
         change_result = check_and_update_document(book_url)
         
         characters_updated = []
