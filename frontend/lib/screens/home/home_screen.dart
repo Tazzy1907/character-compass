@@ -83,9 +83,21 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: darkColor,
-        title: const Text(
-          "CharacterCompass",
-          style: TextStyle(color: Colors.white),
+        centerTitle: true,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'icons/Character Compass Icon.jpeg',
+              height: 32,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              "CharacterCompass",
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
         ),
       ),
       body: _buildBody(),
