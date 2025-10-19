@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../assets/svgs.dart';
+import '../icons/svgs.dart';
 
 // Data model to represent the data from the API
 class BookItem {
