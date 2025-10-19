@@ -198,6 +198,7 @@ class DocumentChangeResponse(BaseModel):
     chunks_added: int = Field(..., description="Number of chunks added")
     chunks_deleted: int = Field(..., description="Number of chunks deleted")
     characters_updated: List[str] = Field(default_factory=list, description="List of characters updated")
+    characters_removed: List[str] = Field(default_factory=list, description="List of characters removed")
     last_modified: str = Field(..., description="Last modification timestamp")
     message: str = Field(..., description="Status message")
     error: Optional[str] = Field(None, description="Error message if check failed")
@@ -209,6 +210,7 @@ class DocumentChangeResponse(BaseModel):
                 "chunks_added": 5,
                 "chunks_deleted": 2,
                 "characters_updated": ["John Doe", "Jane Smith"],
+                "characters_removed": ["Old Character"],
                 "last_modified": "2025-10-19 14:30:00",
                 "message": "Document updated successfully",
                 "error": None

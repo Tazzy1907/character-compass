@@ -512,6 +512,8 @@ async def check_document_changes(book_url: str):
         
         characters_updated = []
         
+        characters_removed = []
+        
         # If changes detected, update character profiles
         if change_result["changed"]:
             print(f"✨ Changes detected! Updating character profiles...")
@@ -527,12 +529,22 @@ async def check_document_changes(book_url: str):
             if update_result["success"]:
                 characters_updated = update_result.get("characters_updated", [])
                 print(f"✅ Successfully updated {len(characters_updated)} characters")
+            
+            # Clean up characters no longer in the document
+            full_document_text = change_result.get("full_document_text", "")
+            if full_document_text:
+                from main import cleanup_removed_characters
+                cleanup_result = cleanup_removed_characters(book_url, full_document_text)
+                if cleanup_result["success"]:
+                    characters_removed = cleanup_result.get("characters_removed", [])
+                    print(f"🧹 Removed {len(characters_removed)} characters no longer in document")
         
         return DocumentChangeResponse(
             changed=change_result["changed"],
             chunks_added=change_result["chunks_added"],
             chunks_deleted=change_result["chunks_deleted"],
             characters_updated=characters_updated,
+            characters_removed=characters_removed,
             last_modified=change_result["last_modified"],
             message=f"Check complete. {'Changes detected and profiles updated.' if change_result['changed'] else 'No changes detected.'}",
             error=None
@@ -546,6 +558,7 @@ async def check_document_changes(book_url: str):
             chunks_added=0,
             chunks_deleted=0,
             characters_updated=[],
+            characters_removed=[],
             last_modified="",
             message="Error checking document",
             error=error_msg

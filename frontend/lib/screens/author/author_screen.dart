@@ -236,9 +236,9 @@ class _AuthorScreenState extends State<AuthorScreen> {
       }
     });
 
-    // Start polling every 60 seconds
-    print('⏰ Starting monitoring timer for $docId - checks every 60 seconds');
-    _activeMonitoringTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+    // Start polling every 15 seconds
+    print('⏰ Starting monitoring timer for $docId - checks every 15 seconds');
+    _activeMonitoringTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       print('⏰ Timer fired - checking for changes');
       _checkActiveBookForChanges();
     });
@@ -319,17 +319,25 @@ class _AuthorScreenState extends State<AuthorScreen> {
       if (changed) {
         final charactersUpdated =
             result['characters_updated'] as List<String>? ?? [];
+        final charactersRemoved =
+            result['characters_removed'] as List<String>? ?? [];
         final chunksAdded = result['chunks_added'] ?? 0;
         final chunksDeleted = result['chunks_deleted'] ?? 0;
+
+        // Build message with character changes
+        String message = 'Document updated! ';
+        if (charactersUpdated.isNotEmpty) {
+          message += '${charactersUpdated.length} characters refreshed. ';
+        }
+        if (charactersRemoved.isNotEmpty) {
+          message += '${charactersRemoved.length} characters removed. ';
+        }
+        message += '($chunksAdded added, $chunksDeleted removed chunks)';
 
         // Show notification about changes
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Document updated! '
-              '${charactersUpdated.length} characters refreshed. '
-              '($chunksAdded added, $chunksDeleted removed chunks)',
-            ),
+            content: Text(message),
             backgroundColor: Colors.blue,
             duration: const Duration(seconds: 5),
             action: SnackBarAction(

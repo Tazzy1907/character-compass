@@ -180,7 +180,8 @@ def check_and_update_document(doc_id: str) -> dict:
             "chunks_added": len(hashes_to_add),
             "chunks_deleted": len(hashes_to_delete),
             "last_modified": current_mod_time,
-            "changed_chunks_text": changed_chunks_text
+            "changed_chunks_text": changed_chunks_text,
+            "full_document_text": new_documents_text  # For character cleanup
         }
         
     except Exception as e:
@@ -459,6 +460,75 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
         return {
             "success": False,
             "error": error_msg
+        }
+
+def cleanup_removed_characters(book_url: str, full_document_text: str) -> dict:
+    """
+    Remove characters from database that are no longer mentioned in the document.
+    
+    Args:
+        book_url: The Google Doc ID/URL for the book
+        full_document_text: The complete current text of the document
+        
+    Returns:
+        dict: Summary of characters removed
+    """
+    try:
+        print(f"\n🧹 Checking for characters to remove from {book_url}...")
+        
+        # Get all existing characters for this book
+        existing_characters = database.get_characters_by_book(book_url)
+        
+        if not existing_characters:
+            print("No characters in database to check.")
+            return {
+                "success": True,
+                "characters_removed": [],
+                "message": "No characters to check"
+            }
+        
+        document_text_lower = full_document_text.lower()
+        characters_to_remove = []
+        
+        # Check each character to see if they're still mentioned
+        for char in existing_characters:
+            char_name = char['name']
+            
+            # Check if character name appears in the document
+            if char_name.lower() not in document_text_lower:
+                characters_to_remove.append(char_name)
+                print(f"   ❌ '{char_name}' no longer in document - will remove")
+            else:
+                print(f"   ✓ '{char_name}' still present")
+        
+        # Remove characters that are no longer in the document
+        removed_characters = []
+        for char_name in characters_to_remove:
+            try:
+                database.delete_character(char_name, book_url)
+                removed_characters.append(char_name)
+                print(f"   🗑️  Removed '{char_name}' from database")
+            except Exception as e:
+                print(f"   ⚠️  Failed to remove '{char_name}': {e}")
+        
+        if removed_characters:
+            print(f"\n🧹 Cleanup complete: Removed {len(removed_characters)} character(s)")
+        else:
+            print(f"\n✓ No characters need to be removed")
+        
+        return {
+            "success": True,
+            "characters_removed": removed_characters,
+            "message": f"Removed {len(removed_characters)} characters no longer in document"
+        }
+        
+    except Exception as e:
+        error_msg = f"Error during character cleanup: {str(e)}"
+        print(f"\n❌ {error_msg}\n")
+        return {
+            "success": False,
+            "error": error_msg,
+            "characters_removed": []
         }
 
 def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict:
