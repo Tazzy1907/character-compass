@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+<<<<<<< HEAD
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../../models/card_item.dart';
 import '../../../icons/svgs.dart';
+=======
+import '../../../models/book_item.dart';
+import '../../../assets/svgs.dart';
+>>>>>>> characters
 import '../../../style.dart';
 import "app_text_field.dart";
 
@@ -52,7 +57,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
     if (name.isNotEmpty && url.isNotEmpty && _selectedIcon != null) {
       final docId = extractGoogleDocId(url);
       if (docId == null) return;
-      final newItem = CardItem(name: name, icon: _selectedIcon!, docId: docId);
+      final newItem = BookItem(name: name, icon: _selectedIcon!, docId: docId);
       // Pop the dialog and return the new item
       Navigator.of(context).pop(newItem);
     }
@@ -68,8 +73,8 @@ class _AddItemDialogState extends State<AddItemDialog> {
           builder: (context) {
             double maxWidth = MediaQuery.of(context).size.width;
             int maxCrossAxisCount = (maxWidth / 65).floor();
-            List<int> axisCounts = [16, 8, 4, 2, 1];
-            int crossAxisCount = 16;
+            List<int> axisCounts = [8, 4, 2, 1];
+            int crossAxisCount = 8;
             for (int count in axisCounts) {
               if (maxCrossAxisCount >= count) {
                 crossAxisCount = count;
@@ -85,6 +90,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
                 20 +
                 (10 * (mainAxisCount - 1)) +
                 (mainAxisCount * crossAxisWidth);
+            double iconSize = (crossAxisWidth * 0.5).clamp(24.0, 48.0);
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -120,39 +126,50 @@ class _AddItemDialogState extends State<AddItemDialog> {
                     // We set isEmpty to false to force the label to "float"
                     // Otherwise, it might sit on top of your icons.
                     isEmpty: false,
-                    child: GridView.builder(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossAxisCount,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                      ),
-                      itemCount: _selectableIcons.length,
-                      itemBuilder: (context, index) {
-                        final icon = _selectableIcons[index];
-                        final isSelected = _selectedIcon == icon;
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _selectedIcon = icon;
-                            });
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Theme.of(
-                                      context,
-                                    ).primaryColor.withOpacity(0.3)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: isSelected ? Colors.white : Colors.grey,
-                                width: 2,
+                    child: Center(
+                      child: GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
+                        itemCount: _selectableIcons.length,
+                        itemBuilder: (context, index) {
+                          final icon = _selectableIcons[index];
+                          final isSelected = _selectedIcon == icon;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedIcon = icon;
+                              });
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? Theme.of(
+                                        context,
+                                      ).primaryColor.withOpacity(0.3)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? Colors.white
+                                      : Colors.grey,
+                                  width: 2,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                icon,
+                                size: iconSize,
+                                color: Colors.white70,
                               ),
                             ),
-                            child: Icon(icon, color: Colors.white70),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),

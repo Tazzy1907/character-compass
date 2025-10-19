@@ -3,20 +3,25 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../icons/svgs.dart';
 
 // Data model to represent the data from the API
-class CardItem {
+class BookItem {
   final String name;
   final IconData icon;
   final String docId;
 
-  CardItem({required this.name, required this.icon, required this.docId});
+  BookItem({required this.name, required this.icon, required this.docId});
 
   // Factory constructor to create a CardItem from JSON.
-  factory CardItem.fromJson(Map<String, dynamic> json) {
-    return CardItem(
-      name: json['name'] as String? ?? 'Unnamed',
-      icon: _mapStringToIcon(json['icon'] as String? ?? 'error'),
-      docId: json['url'] as String? ?? '',
-    );
+  factory BookItem.fromJson(Map<String, dynamic> json) {
+    try {
+      return BookItem(
+        name: json['name'] as String,
+        icon: _mapStringToIcon(json['icon'] as String? ?? 'error'),
+        docId: json['url'] as String,
+      );
+    } catch (e) {
+      // Re-throw the exception to let the caller handle it
+      throw FormatException('Failed to parse BookItem: $e');
+    }
   }
 }
 

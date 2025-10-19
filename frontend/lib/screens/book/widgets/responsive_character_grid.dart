@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../../models/book_item.dart';
-import 'icon_card.dart';
+import '../../../models/character_item.dart';
+import './character_card.dart';
 
-class ResponsiveIconGrid extends StatelessWidget {
-  final List<BookItem> items;
+class ResponsiveCharacterGrid extends StatelessWidget {
+  final List<CharacterItem> items;
 
-  const ResponsiveIconGrid({super.key, required this.items});
+  const ResponsiveCharacterGrid({super.key, required this.items});
 
   @override
   @override
@@ -26,7 +26,7 @@ class ResponsiveIconGrid extends StatelessWidget {
           ),
           itemCount: items.length,
           itemBuilder: (context, index) {
-            return IconCard(item: items[index]);
+            return CharacterCard(item: items[index]);
           },
         );
       },

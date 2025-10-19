@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../models/card_item.dart';
-import '../models/character.dart';
+import '../models/book_item.dart';
+import '../models/character_item.dart';
+import '../models/character_details.dart';
 
 // A dedicated class for handling API interactions.
 class ApiService {
@@ -10,7 +11,7 @@ class ApiService {
 
   // --- MOCK DATA FOR TESTING ---
   // This function simulates an API response.
-  Future<List<CardItem>> _getMockData() async {
+  Future<List<BookItem>> _getMockData() async {
     // Simulate a network delay of 1 second
     await Future.delayed(const Duration(seconds: 1));
     const mockApiResponse = '''
@@ -35,11 +36,11 @@ class ApiService {
     ''';
     print(mockApiResponse);
     final List<dynamic> jsonResponse = json.decode(mockApiResponse);
-    return jsonResponse.map((data) => CardItem.fromJson(data)).toList();
+    return jsonResponse.map((data) => BookItem.fromJson(data)).toList();
   }
 
   // --- API FETCH LOGIC ---
-  Future<List<CardItem>> fetchCardItems() async {
+  Future<List<BookItem>> fetchCardItems() async {
     if (isTesting) {
       return _getMockData();
     }
@@ -50,7 +51,44 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final List<dynamic> jsonResponse = json.decode(response.body);
-        return jsonResponse.map((data) => CardItem.fromJson(data)).toList();
+        return jsonResponse.map((data) => BookItem.fromJson(data)).toList();
+      } else {
+        throw Exception('Failed to load items from API');
+      }
+    } catch (e) {
+      throw Exception('Failed to connect to the API: $e');
+    }
+  }
+
+  Future<List<CharacterItem>> fetchCharacterItems(String docId) async {
+    final apiUrl = "$baseUrl/api/books/$docId/characters";
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> jsonResponse = json.decode(response.body);
+        print(jsonResponse);
+        final List<dynamic> charactersJson =
+            jsonResponse['characters'] as List<dynamic>;
+        return charactersJson
+            .map((data) => CharacterItem.fromJson(data as Map<String, dynamic>))
+            .toList();
+      } else {
+        throw Exception('Failed to load items from API');
+      }
+    } catch (e) {
+      throw Exception('Failed to connect to the API: $e');
+    }
+  }
+
+  Future<CharacterDetails> fetchCharacterDetails(int characterId) async {
+    final apiUrl = "$baseUrl/api/characters/$characterId";
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200) {
+        final dynamic jsonResponse = json.decode(response.body);
+        return CharacterDetails.fromJson(jsonResponse);
       } else {
         throw Exception('Failed to load items from API');
       }
@@ -62,11 +100,11 @@ class ApiService {
   // --- CHARACTER API METHODS ---
 
   /// Fetch a specific character by ID
-  Future<Character> fetchCharacterById(int characterId) async {
+  Future<CharacterDetails> fetchCharacterById(int characterId) async {
     if (isTesting) {
       // Return mock character for testing
       await Future.delayed(const Duration(seconds: 1));
-      return Character(
+      return CharacterDetails(
         id: characterId,
         name: "Sample Character",
         bookUrl: "test_book_1",
@@ -98,7 +136,7 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final jsonResponse = json.decode(response.body);
-        return Character.fromJson(jsonResponse);
+        return CharacterDetails.fromJson(jsonResponse);
       } else if (response.statusCode == 404) {
         throw Exception('Character not found');
       } else {

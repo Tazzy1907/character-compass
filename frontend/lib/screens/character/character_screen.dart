@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../api/api_service.dart';
-import '../../models/character.dart';
+import '../../models/character_details.dart';
 import '../../style.dart';
 
 class CharacterScreen extends StatefulWidget {
@@ -15,7 +15,7 @@ class CharacterScreen extends StatefulWidget {
 class _CharacterScreenState extends State<CharacterScreen>
     with SingleTickerProviderStateMixin {
   final ApiService _apiService = ApiService();
-  Character? _character;
+  CharacterDetails? _character;
   String? _error;
   bool _isLoading = true;
   late TabController _tabController;
@@ -66,31 +66,34 @@ class _CharacterScreenState extends State<CharacterScreen>
     );
   }
 
+  String _capitalize(String text) {
+    if (text.isEmpty) return text;
+    return text[0].toUpperCase() + text.substring(1);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7F8),
       appBar: AppBar(
         backgroundColor: darkColor,
+        centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.white),
-        title: Text(
-          _character?.name ?? "Character Profile",
-          style: const TextStyle(color: Colors.white),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'icons/Character Compass Icon.jpeg',
+              height: 32,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              "CharacterCompass",
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
         ),
-        bottom: _character != null
-            ? TabBar(
-                controller: _tabController,
-                indicatorColor: highlightColor,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white70,
-                tabs: const [
-                  Tab(icon: Icon(Icons.person), text: "Overview"),
-                  Tab(icon: Icon(Icons.history_edu), text: "Backstory"),
-                  Tab(icon: Icon(Icons.people), text: "Relationships"),
-                  Tab(icon: Icon(Icons.flag), text: "Goals"),
-                ],
-              )
-            : null,
       ),
       body: _buildBody(),
       floatingActionButton: _character != null
@@ -148,119 +151,144 @@ class _CharacterScreenState extends State<CharacterScreen>
       return const Center(child: Text('No character data'));
     }
 
-    return TabBarView(
-      controller: _tabController,
-      children: [
-        _buildOverviewTab(),
-        _buildBackstoryTab(),
-        _buildRelationshipsTab(),
-        _buildGoalsTab(),
-      ],
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Card(
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              // Tab Bar at the top of the card
+              Container(
+                decoration: BoxDecoration(
+                  color: darkColor,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorColor: highlightColor,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white70,
+                  indicatorWeight: 3,
+                  tabs: const [
+                    Tab(icon: Icon(Icons.person), text: "Overview"),
+                    Tab(icon: Icon(Icons.history_edu), text: "Backstory"),
+                    Tab(icon: Icon(Icons.people), text: "Relationships"),
+                    Tab(icon: Icon(Icons.flag), text: "Goals"),
+                  ],
+                ),
+              ),
+              // Tab Content
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildOverviewTab(),
+                    _buildBackstoryTab(),
+                    _buildRelationshipsTab(),
+                    _buildGoalsTab(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildOverviewTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Character Header Card
-          Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: _character!.characterType == 'main'
-                        ? highlightColor
-                        : lightColor,
-                    radius: 50,
-                    child: Text(
-                      _character!.name[0].toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 40,
-                        fontWeight: FontWeight.bold,
+          // Character Header
+          Center(
+            child: Column(
+              children: [
+                Stack(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: highlightColor.withOpacity(0.2),
+                      radius: 50,
+                      child: Icon(Icons.person, size: 60, color: darkColor),
+                    ),
+                    if (_character!.characterType.toLowerCase() == 'main')
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4.0),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: 4.0,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.emoji_events,
+                            size: 24.0,
+                            color: Color(0xFFFFD700),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _character!.name,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_character!.briefDescription.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _character!.briefDescription,
-                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                    ),
                   ],
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _character!.characterType == 'main'
-                          ? highlightColor.withOpacity(0.2)
-                          : lightColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _character!.characterType.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: _character!.characterType == 'main'
-                            ? highlightColor
-                            : lightColor,
-                      ),
-                    ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _character!.name,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
                   ),
-                ],
-              ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 32),
 
-          // Basic Info Card
-          _buildInfoCard('Basic Information', Icons.info_outline, [
+          // Basic Info Section
+          _buildInfoSection('Basic Information', Icons.info_outline, [
             if (_character!.age != null)
               _buildInfoRow('Age', '${_character!.age}'),
             if (_character!.gender != null)
-              _buildInfoRow('Gender', _character!.gender!),
-            if (_character!.sex != null) _buildInfoRow('Sex', _character!.sex!),
+              _buildInfoRow('Gender', _capitalize(_character!.gender!)),
+            if (_character!.sex != null)
+              _buildInfoRow('Sex', _capitalize(_character!.sex!)),
             if (_character!.race != null)
-              _buildInfoRow('Race', _character!.race!),
+              _buildInfoRow('Race', _capitalize(_character!.race!)),
             if (_character!.occupation != null &&
                 _character!.occupation!.isNotEmpty)
-              _buildInfoRow('Occupation', _character!.occupation!),
+              _buildInfoRow('Occupation', _capitalize(_character!.occupation!)),
           ]),
 
-          // Personality Card
+          // Personality Section
           if (_character!.hasPersonality) ...[
-            const SizedBox(height: 16),
-            _buildSectionCard(
+            const SizedBox(height: 24),
+            _buildTextSection(
               'Personality',
               Icons.psychology,
               _character!.personality!,
             ),
           ],
 
-          // Appearance Card
+          // Appearance Section
           if (_character!.hasAppearance) ...[
-            const SizedBox(height: 16),
-            _buildSectionCard(
+            const SizedBox(height: 24),
+            _buildTextSection(
               'Appearance',
               Icons.face,
               _character!.appearance!,
@@ -273,9 +301,9 @@ class _CharacterScreenState extends State<CharacterScreen>
 
   Widget _buildBackstoryTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       child: _character!.hasBackstory
-          ? _buildSectionCard(
+          ? _buildTextSection(
               'Backstory',
               Icons.history_edu,
               _character!.backstory!,
@@ -299,24 +327,30 @@ class _CharacterScreenState extends State<CharacterScreen>
   Widget _buildRelationshipsTab() {
     return _character!.hasRelationships
         ? ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(24),
             itemCount: _character!.relationships.length,
             itemBuilder: (context, index) {
-              return Card(
-                elevation: 2,
+              return Container(
                 margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: lightColor,
-                    child: const Icon(Icons.person, color: Colors.white),
-                  ),
-                  title: Text(
-                    _character!.relationships[index],
-                    style: const TextStyle(fontSize: 16),
-                  ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: lightColor.withOpacity(0.3),
+                      child: Icon(Icons.person, color: darkColor),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        _character!.relationships[index],
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -338,20 +372,20 @@ class _CharacterScreenState extends State<CharacterScreen>
 
   Widget _buildGoalsTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Goals Section
-          _buildListSection(
+          _buildBulletSection(
             'Goals',
             Icons.flag,
             _character!.goals,
             highlightColor,
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 32),
           // Motivations Section
-          _buildListSection(
+          _buildBulletSection(
             'Motivations',
             Icons.psychology,
             _character!.motivations,
@@ -362,38 +396,41 @@ class _CharacterScreenState extends State<CharacterScreen>
     );
   }
 
-  Widget _buildInfoCard(String title, IconData icon, List<Widget> children) {
+  Widget _buildInfoSection(String title, IconData icon, List<Widget> children) {
     if (children.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Icon(icon, color: darkColor, size: 24),
-                const SizedBox(width: 12),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: darkColor,
-                  ),
-                ),
-              ],
+            Icon(icon, color: darkColor, size: 24),
+            const SizedBox(width: 12),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: darkColor,
+              ),
             ),
-            const SizedBox(height: 16),
-            ...children,
           ],
         ),
-      ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
+        ),
+      ],
     );
   }
 
@@ -420,105 +457,113 @@ class _CharacterScreenState extends State<CharacterScreen>
     );
   }
 
-  Widget _buildSectionCard(String title, IconData icon, String content) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildTextSection(String title, IconData icon, String content) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Icon(icon, color: darkColor, size: 24),
-                const SizedBox(width: 12),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: darkColor,
-                  ),
-                ),
-              ],
+            Icon(icon, color: darkColor, size: 24),
+            const SizedBox(width: 12),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: darkColor,
+              ),
             ),
-            const SizedBox(height: 16),
-            Text(content, style: const TextStyle(fontSize: 15, height: 1.5)),
           ],
         ),
-      ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            content,
+            style: const TextStyle(fontSize: 16, height: 1.6),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildListSection(
+  Widget _buildBulletSection(
     String title,
     IconData icon,
     List<String> items,
     Color color,
   ) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Icon(icon, color: color, size: 24),
-                const SizedBox(width: 12),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-                ),
-              ],
+            Icon(icon, color: color, size: 24),
+            const SizedBox(width: 12),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
             ),
-            const SizedBox(height: 16),
-            if (items.isEmpty)
-              Text(
-                'No $title recorded',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
-                ),
-              )
-            else
-              ...items.asMap().entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.only(top: 6),
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          entry.value,
-                          style: const TextStyle(fontSize: 15),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
           ],
         ),
-      ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (items.isEmpty)
+                Text(
+                  'No $title recorded',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Colors.grey[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                )
+              else
+                ...items.asMap().entries.map((entry) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            entry.value,
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../author/author_screen.dart';
-import '../../style.dart';
+import '../../../style.dart';
 
 // 1. The Landing Page Widget
 class HomeScreen extends StatelessWidget {
@@ -21,10 +21,11 @@ class HomeScreen extends StatelessWidget {
             MaterialPageRoute(builder: (context) => const AuthorScreen()),
           );
         },
+        behavior: HitTestBehavior.opaque,
         child: Center(
           // Center the image on the screen
           child: Image.asset(
-            'icons/Character Compass Cropped Logo.jpeg', // The path to your image asset
+            'icons/Character Compass No BG.png', // The path to your image asset
             width: 300, // Optional: control the size of your image
             height: 300,
           ),

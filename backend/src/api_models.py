@@ -23,8 +23,24 @@ class BookResponse(BaseModel):
         }
 
 
+class CharacterSummaryResponse(BaseModel):
+    """Response model for character summary data (used in lists)."""
+    id: int = Field(..., description="Character ID")
+    name: str = Field(..., description="Character name")
+    character_type: str = Field(..., description="Character type: main or side")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "name": "John Doe",
+                "character_type": "main"
+            }
+        }
+
+
 class CharacterResponse(BaseModel):
-    """Response model for character profile data."""
+    """Response model for full character profile data."""
     id: int = Field(..., description="Character ID")
     name: str = Field(..., description="Character name")
     book_url: str = Field(..., description="Book this character belongs to")
@@ -66,8 +82,8 @@ class CharacterResponse(BaseModel):
 
 
 class CharacterListResponse(BaseModel):
-    """Response model for a list of characters."""
-    characters: List[CharacterResponse]
+    """Response model for a list of characters (summary view)."""
+    characters: List[CharacterSummaryResponse]
     count: int = Field(..., description="Number of characters returned")
     
     class Config:

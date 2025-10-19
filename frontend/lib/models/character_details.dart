@@ -1,5 +1,5 @@
 // Model for character data from the API
-class Character {
+class CharacterDetails {
   final int id;
   final String name;
   final String bookUrl;
@@ -16,7 +16,7 @@ class Character {
   final List<String> goals;
   final List<String> motivations;
 
-  Character({
+  CharacterDetails({
     required this.id,
     required this.name,
     required this.bookUrl,
@@ -35,8 +35,8 @@ class Character {
   });
 
   // Factory constructor to create a Character from JSON
-  factory Character.fromJson(Map<String, dynamic> json) {
-    return Character(
+  factory CharacterDetails.fromJson(Map<String, dynamic> json) {
+    return CharacterDetails(
       id: json['id'] as int,
       name: json['name'] as String,
       bookUrl: json['book_url'] as String,
