@@ -4,10 +4,14 @@ import 'icon_card.dart';
 
 class ResponsiveIconGrid extends StatelessWidget {
   final List<BookItem> items;
+  final Function(String)? onToggleMonitoring;
 
-  const ResponsiveIconGrid({super.key, required this.items});
+  const ResponsiveIconGrid({
+    super.key,
+    required this.items,
+    this.onToggleMonitoring,
+  });
 
-  @override
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -26,7 +30,10 @@ class ResponsiveIconGrid extends StatelessWidget {
           ),
           itemCount: items.length,
           itemBuilder: (context, index) {
-            return IconCard(item: items[index]);
+            return IconCard(
+              item: items[index],
+              onToggleMonitoring: onToggleMonitoring,
+            );
           },
         );
       },

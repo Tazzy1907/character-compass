@@ -146,4 +146,98 @@ class ApiService {
       throw Exception('Failed to fetch character: $e');
     }
   }
+
+  // --- BOOK UPLOAD API METHODS ---
+
+  /// Upload a new book and trigger profile generation
+  Future<Map<String, dynamic>> uploadNewBook(
+    String docId,
+    String bookName,
+    String iconName,
+  ) async {
+    final apiUrl = "$baseUrl/api/generate";
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'book_url': docId,
+          'book_name': bookName,
+          'book_icon': iconName,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+        return {
+          'success': jsonResponse['success'] ?? false,
+          'message': jsonResponse['message'] ?? '',
+        };
+      } else {
+        throw Exception('Failed to upload book: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to upload book: $e');
+    }
+  }
+
+  /// Check the status of profile generation
+  Future<Map<String, dynamic>> checkGenerationStatus() async {
+    final apiUrl = "$baseUrl/api/generate/status";
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+        return {
+          'is_running': jsonResponse['is_running'] ?? false,
+          'book_url': jsonResponse['book_url'],
+          'started_at': jsonResponse['started_at'],
+          'message': jsonResponse['message'] ?? '',
+          'error': jsonResponse['error'],
+        };
+      } else {
+        throw Exception(
+          'Failed to check generation status: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Failed to check generation status: $e');
+    }
+  }
+
+  // --- ACTIVE MONITORING API METHODS ---
+
+  /// Check a document for changes and update character profiles
+  Future<Map<String, dynamic>> checkDocumentChanges(String docId) async {
+    final apiUrl = "$baseUrl/api/books/$docId/check-changes";
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({}), // Empty body for POST request
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+        return {
+          'changed': jsonResponse['changed'] ?? false,
+          'chunks_added': jsonResponse['chunks_added'] ?? 0,
+          'chunks_deleted': jsonResponse['chunks_deleted'] ?? 0,
+          'characters_updated': List<String>.from(
+            jsonResponse['characters_updated'] ?? [],
+          ),
+          'last_modified': jsonResponse['last_modified'] ?? '',
+          'message': jsonResponse['message'] ?? '',
+          'error': jsonResponse['error'],
+        };
+      } else {
+        throw Exception(
+          'Failed to check document changes: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Failed to check document changes: $e');
+    }
+  }
 }

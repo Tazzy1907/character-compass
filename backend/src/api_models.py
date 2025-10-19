@@ -178,6 +178,7 @@ class GenerationStatusResponse(BaseModel):
     book_url: Optional[str] = Field(None, description="Book URL being processed (if any)")
     started_at: Optional[str] = Field(None, description="When generation started (if running)")
     message: str = Field(..., description="Current status message")
+    error: Optional[str] = Field(None, description="Error message if generation failed")
     
     class Config:
         json_schema_extra = {
@@ -185,7 +186,32 @@ class GenerationStatusResponse(BaseModel):
                 "is_running": True,
                 "book_url": "doc123",
                 "started_at": "2025-10-18 15:30:00",
-                "message": "Generating profiles for book: doc123"
+                "message": "Generating profiles for book: doc123",
+                "error": None
+            }
+        }
+
+
+class DocumentChangeResponse(BaseModel):
+    """Response model for document change check."""
+    changed: bool = Field(..., description="Whether document has changed")
+    chunks_added: int = Field(..., description="Number of chunks added")
+    chunks_deleted: int = Field(..., description="Number of chunks deleted")
+    characters_updated: List[str] = Field(default_factory=list, description="List of characters updated")
+    last_modified: str = Field(..., description="Last modification timestamp")
+    message: str = Field(..., description="Status message")
+    error: Optional[str] = Field(None, description="Error message if check failed")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "changed": True,
+                "chunks_added": 5,
+                "chunks_deleted": 2,
+                "characters_updated": ["John Doe", "Jane Smith"],
+                "last_modified": "2025-10-19 14:30:00",
+                "message": "Document updated successfully",
+                "error": None
             }
         }
 

@@ -25,7 +25,8 @@ from api_models import (
     ErrorResponse,
     GenerateRequest,
     GenerateResponse,
-    GenerationStatusResponse
+    GenerationStatusResponse,
+    DocumentChangeResponse
 )
 
 # Initialize FastAPI app
@@ -54,6 +55,7 @@ generation_status = {
     "book_url": None,
     "started_at": None,
     "message": "No generation in progress",
+    "error": None,
     "lock": threading.Lock()
 }
 
@@ -68,6 +70,7 @@ def run_generation_task(book_url: str, book_name: Optional[str], book_icon: Opti
         generation_status["book_url"] = book_url
         generation_status["started_at"] = datetime.now().isoformat()
         generation_status["message"] = f"Generating profiles for book: {book_url}"
+        generation_status["error"] = None
     
     try:
         # Import here to avoid circular dependencies and ensure RAG system is initialized
@@ -77,19 +80,24 @@ def run_generation_task(book_url: str, book_name: Optional[str], book_icon: Opti
         
         with generation_status["lock"]:
             generation_status["is_running"] = False
-            generation_status["book_url"] = None
+            generation_status["book_url"] = book_url  # Keep book_url so frontend knows which book finished
             generation_status["started_at"] = None
             if result["success"]:
                 generation_status["message"] = f"Generation completed successfully. Created {result['profiles_created']} profiles."
+                generation_status["error"] = None
             else:
-                generation_status["message"] = f"Generation failed: {result.get('error', 'Unknown error')}"
+                error_msg = result.get('error', 'Unknown error')
+                generation_status["message"] = f"Generation failed: {error_msg}"
+                generation_status["error"] = error_msg
     
     except Exception as e:
         with generation_status["lock"]:
             generation_status["is_running"] = False
-            generation_status["book_url"] = None
+            generation_status["book_url"] = book_url  # Keep book_url so frontend knows which book failed
             generation_status["started_at"] = None
-            generation_status["message"] = f"Generation failed with error: {str(e)}"
+            error_msg = str(e)
+            generation_status["message"] = f"Generation failed with error: {error_msg}"
+            generation_status["error"] = error_msg
 
 
 # ==================== ROOT ENDPOINT ====================
@@ -425,7 +433,122 @@ async def get_generation_status():
             is_running=generation_status["is_running"],
             book_url=generation_status["book_url"],
             started_at=generation_status["started_at"],
-            message=generation_status["message"]
+            message=generation_status["message"],
+            error=generation_status.get("error")
+        )
+
+
+# ==================== ACTIVE MONITORING ENDPOINT ====================
+
+@app.post(
+    "/api/books/{book_url}/check-changes",
+    response_model=DocumentChangeResponse,
+    tags=["Monitoring"],
+    summary="Check document for changes",
+    description="Check if a Google Doc has changed and update character profiles if needed"
+)
+async def check_document_changes(book_url: str):
+    """
+    Check a document for changes and update character profiles.
+    
+    This endpoint is used for active monitoring by the frontend.
+    It will:
+    1. Check if profile generation is running (abort if yes)
+    2. Check the document for changes via Google Drive API
+    3. Re-index only changed chunks
+    4. Update existing character profiles if changes detected
+    
+    Args:
+        book_url: The Google Doc ID to check
+        
+    Returns:
+        DocumentChangeResponse with change summary
+        
+    Note:
+        - Cannot run while profile generation is in progress
+        - Only updates existing characters (doesn't find new ones)
+        - Uses hash-based change detection for efficiency
+    """
+    print(f"\n{'='*60}")
+    print(f"📡 API: Check changes request for book: {book_url}")
+    print(f"{'='*60}")
+    
+    try:
+        # Check if profile generation is currently running
+        with generation_status["lock"]:
+            if generation_status["is_running"]:
+                return DocumentChangeResponse(
+                    changed=False,
+                    chunks_added=0,
+                    chunks_deleted=0,
+                    characters_updated=[],
+                    last_modified="",
+                    message="Profile generation in progress",
+                    error="Cannot check changes while profile generation is running"
+                )
+        
+        # Import here to avoid circular dependencies
+        from main import check_and_update_document, update_existing_profiles, rag_state, reinitialize_rag_for_document
+        
+        # Check if this book is currently indexed
+        # If not, re-initialize RAG for this book (unless it's being used for generation)
+        if rag_state.current_doc_id != book_url:
+            print(f"Switching RAG context to monitored book: {book_url}")
+            try:
+                reinitialize_rag_for_document(book_url)
+            except Exception as e:
+                return DocumentChangeResponse(
+                    changed=False,
+                    chunks_added=0,
+                    chunks_deleted=0,
+                    characters_updated=[],
+                    last_modified="",
+                    message="Failed to switch to monitored book",
+                    error=f"Could not index book {book_url}: {str(e)}"
+                )
+        
+        # Check for document changes
+        change_result = check_and_update_document(book_url)
+        
+        characters_updated = []
+        
+        # If changes detected, update character profiles
+        if change_result["changed"]:
+            print(f"✨ Changes detected! Updating character profiles...")
+            
+            # Get changed chunks for character filtering
+            changed_chunks = change_result.get("changed_chunks_text", [])
+            
+            # Pass changed chunks to filter relevant characters
+            update_result = update_existing_profiles(book_url, changed_chunks)
+            
+            print(f"📊 Update result: {update_result}")
+            
+            if update_result["success"]:
+                characters_updated = update_result.get("characters_updated", [])
+                print(f"✅ Successfully updated {len(characters_updated)} characters")
+        
+        return DocumentChangeResponse(
+            changed=change_result["changed"],
+            chunks_added=change_result["chunks_added"],
+            chunks_deleted=change_result["chunks_deleted"],
+            characters_updated=characters_updated,
+            last_modified=change_result["last_modified"],
+            message=f"Check complete. {'Changes detected and profiles updated.' if change_result['changed'] else 'No changes detected.'}",
+            error=None
+        )
+        
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Error checking document changes: {error_msg}")
+        return DocumentChangeResponse(
+            changed=False,
+            chunks_added=0,
+            chunks_deleted=0,
+            characters_updated=[],
+            last_modified="",
+            message="Error checking document",
+            error=error_msg
         )
 
 

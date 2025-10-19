@@ -1,4 +1,6 @@
+import os
 import os.path
+from pathlib import Path
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -7,24 +9,35 @@ from google.oauth2.credentials import Credentials
 SCOPES = ['https://www.googleapis.com/auth/documents.readonly',
         'https://www.googleapis.com/auth/drive.readonly']
 
+# Get the directory where this script is located
+SCRIPT_DIR = Path(__file__).parent
+CREDS_DIR = SCRIPT_DIR / 'creds'
+TOKEN_PATH = CREDS_DIR / 'token.json'
+CREDENTIALS_PATH = CREDS_DIR / 'credentials.json'
+
 def _get_credentials():
     """
     Internal function to get valid user credentials.
     """
     creds = None
-    if os.path.exists('creds/token.json'):
-        creds = Credentials.from_authorized_user_file('creds/token.json', SCOPES)
+    if TOKEN_PATH.exists():
+        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
     
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
+            if not CREDENTIALS_PATH.exists():
+                raise FileNotFoundError(
+                    f"Credentials file not found at {CREDENTIALS_PATH}. "
+                    "Please ensure credentials.json exists in the backend/src/creds/ directory."
+                )
             flow = InstalledAppFlow.from_client_secrets_file(
-                'creds/credentials.json',
+                str(CREDENTIALS_PATH),
                 SCOPES
             )
             creds = flow.run_local_server(port=0)
-        with open('creds/token.json', 'w') as token:
+        with open(TOKEN_PATH, 'w') as token:
             token.write(creds.to_json())
     return creds
 

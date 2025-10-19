@@ -45,24 +45,30 @@ class RAGState:
         self.old_split_hashes = set()
         self.lock = threading.Lock()
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        self.current_doc_id = None
+        self.monitor_thread = None
+        self.stop_monitoring = threading.Event()
 
 rag_state = RAGState()
 
 def hash_chunk(chunk_text):
     return hashlib.md5(chunk_text.encode('utf-8')).hexdigest()
 
-def initialise_rag_system():
+def initialise_rag_system(doc_id: str):
     """
     Performs initialisation of the RAG system, including loading, splitting, embed, and agent creation.
+    
+    Args:
+        doc_id: The Google Doc ID to index
     """
-    print("Initialising RAG system...")
+    print(f"Initialising RAG system for document {doc_id}...")
 
     try:
         client = get_drive_service()
-        file_metadata = client.files().get(fileId=DOC_ID, fields='modifiedTime').execute()
+        file_metadata = client.files().get(fileId=doc_id, fields='modifiedTime').execute()
 
         # Get initial content.
-        documents_text = get_doc_content(DOC_ID)
+        documents_text = get_doc_content(doc_id)
 
         # Split text and create documents with hashed IDs.
         splits = rag_state.text_splitter.split_text(documents_text)
@@ -84,67 +90,120 @@ def initialise_rag_system():
         )
         
         rag_state.last_known_mod_time = file_metadata.get('modifiedTime')
+        rag_state.current_doc_id = doc_id
         print(f"RAG System Initialised. {len(ids_to_embed)} chunks indexed.")
 
     except Exception as e:
         print(f"Error initializing RAG system: {e}")
-        exit(1)
+        raise e
+
+def check_and_update_document(doc_id: str) -> dict:
+    """
+    Check document for changes and update vectorstore if needed.
+    
+    Args:
+        doc_id: The Google Doc ID to check
+        
+    Returns:
+        dict: Summary of changes made
+    """
+    try:
+        print(f"\n🔍 Checking document {doc_id} for changes...")
+        client = get_drive_service()
+        
+        # Check for changes
+        file_metadata = client.files().get(fileId=doc_id, fields='modifiedTime').execute()
+        current_mod_time = file_metadata.get('modifiedTime')
+        
+        print(f"📅 Current mod time: {current_mod_time}")
+        print(f"📅 Last known mod time: {rag_state.last_known_mod_time}")
+        
+        # No changes detected
+        if current_mod_time == rag_state.last_known_mod_time:
+            print("✓ No changes detected")
+            return {
+                "changed": False,
+                "chunks_added": 0,
+                "chunks_deleted": 0,
+                "last_modified": current_mod_time
+            }
+        
+        print(f"Document changed at {current_mod_time}. Reindexing...")
+        
+        # Get new content
+        new_documents_text = get_doc_content(doc_id)
+        if not new_documents_text:
+            raise Exception("Failed to fetch document content")
+        
+        # Split and hash new content
+        new_splits = rag_state.text_splitter.split_text(new_documents_text)
+        new_split_hashes = set()
+        new_split_map = {}
+        
+        for split in new_splits:
+            chunk_hash = hash_chunk(split)
+            new_split_hashes.add(chunk_hash)
+            new_split_map[chunk_hash] = split
+        
+        # Calculate diff
+        hashes_to_add = new_split_hashes - rag_state.old_split_hashes
+        hashes_to_delete = rag_state.old_split_hashes - new_split_hashes
+        
+        # Store changed chunk text for character filtering
+        changed_chunks_text = []
+        
+        # Update vector store
+        with rag_state.lock:
+            if hashes_to_delete:
+                rag_state.vectorstore.delete(ids=list(hashes_to_delete))
+                print(f"Deleted {len(hashes_to_delete)} old chunks.")
+            
+            if hashes_to_add:
+                texts_to_add = [new_split_map[h] for h in hashes_to_add]
+                changed_chunks_text = texts_to_add  # Save for character filtering
+                ids_to_add = list(hashes_to_add)
+                rag_state.vectorstore.add_texts(
+                    texts=texts_to_add,
+                    ids=ids_to_add
+                )
+                print(f"Added {len(hashes_to_add)} new chunks.")
+            
+            # Update state
+            rag_state.old_split_hashes = new_split_hashes
+            rag_state.last_known_mod_time = current_mod_time
+        
+        print("Document reindexed successfully.")
+        
+        return {
+            "changed": True,
+            "chunks_added": len(hashes_to_add),
+            "chunks_deleted": len(hashes_to_delete),
+            "last_modified": current_mod_time,
+            "changed_chunks_text": changed_chunks_text
+        }
+        
+    except Exception as e:
+        print(f"Error checking document changes: {e}")
+        raise e
 
 def monitor_document_changes():
     """
     A loop that runs in the background and monitors the document for changes.
     """
-    client = get_drive_service()
-
-    while True:
+    while not rag_state.stop_monitoring.is_set():
         try:
             time.sleep(DOC_POLL_INTERVAL)
 
-            # Check for changes.
-            file_metadata = client.files().get(fileId=DOC_ID, fields='modifiedTime').execute()
-            current_mod_time = file_metadata.get('modifiedTime')
+            # Check if monitoring should stop
+            if rag_state.stop_monitoring.is_set():
+                break
 
-            if current_mod_time == rag_state.last_known_mod_time:
+            # Check if we have a document to monitor
+            if not rag_state.current_doc_id:
                 continue
 
-            print(f"Document changed at {current_mod_time}. Reindexing...")
-
-            new_documents_text = get_doc_content(DOC_ID)
-
-            new_splits = rag_state.text_splitter.split_text(new_documents_text)
-            new_split_hashes = set()
-            new_split_map = {}
-
-            for split in new_splits:
-                chunk_hash = hash_chunk(split)
-                new_split_hashes.add(chunk_hash)
-                new_split_map[chunk_hash] = split
-
-            # Calculate diff
-            hashes_to_add = new_split_hashes - rag_state.old_split_hashes
-            hashes_to_delete = rag_state.old_split_hashes - new_split_hashes
-
-            # Get update lock.
-            with rag_state.lock:
-                # Update vector store.
-                if hashes_to_delete:
-                    rag_state.vectorstore.delete(ids=hashes_to_delete)
-                    print(f"Deleted {len(hashes_to_delete)} old chunks.")
-                
-                if hashes_to_add:
-                    texts_to_add = [new_split_map[h] for h in hashes_to_add]
-                    ids_to_add = list(hashes_to_add)
-                    rag_state.vectorstore.add_texts(
-                        texts=texts_to_add,
-                        ids=ids_to_add
-                    )
-                    print(f"Added {len(hashes_to_add)} new chunks.")
-
-                # Update state for next poll
-                rag_state.old_split_hashes = new_split_hashes
-                rag_state.last_known_mod_time = current_mod_time
-
-            print("Document reindexed successfully.")
+            # Use refactored function to check and update
+            check_and_update_document(rag_state.current_doc_id)
 
         except Exception as e:
             print(f"Error monitoring document changes: {e}")
@@ -154,8 +213,55 @@ def begin_change_monitoring():
     """
     Begins monitoring the document for changes.
     """
-    monitor_thread = threading.Thread(target=monitor_document_changes, daemon=True)
-    monitor_thread.start()
+    rag_state.stop_monitoring.clear()
+    rag_state.monitor_thread = threading.Thread(target=monitor_document_changes, daemon=True)
+    rag_state.monitor_thread.start()
+
+def stop_change_monitoring():
+    """
+    Stops the document monitoring thread.
+    """
+    if rag_state.monitor_thread and rag_state.monitor_thread.is_alive():
+        print("Stopping document monitoring...")
+        rag_state.stop_monitoring.set()
+        rag_state.monitor_thread.join(timeout=5)
+        print("Document monitoring stopped.")
+
+def reinitialize_rag_for_document(doc_id: str):
+    """
+    Re-initializes the RAG system for a new document.
+    This stops any existing monitoring, clears the vectorstore, and re-indexes the new document.
+    
+    Args:
+        doc_id: The Google Doc ID to index
+    """
+    print(f"\n{'='*60}")
+    print(f"Re-initializing RAG system for document: {doc_id}")
+    print(f"{'='*60}\n")
+    
+    # Stop existing monitoring
+    stop_change_monitoring()
+    
+    # Clear existing state
+    with rag_state.lock:
+        rag_state.vectorstore = None
+        rag_state.last_known_mod_time = None
+        rag_state.old_split_hashes = set()
+        rag_state.current_doc_id = None
+    
+    # Initialize with new document
+    initialise_rag_system(doc_id)
+    
+    # Recreate tools and agents with new vectorstore
+    create_tools()
+    create_agents()
+    
+    # Start monitoring the new document
+    begin_change_monitoring()
+    
+    print(f"\n{'='*60}")
+    print(f"RAG system re-initialized successfully for {doc_id}")
+    print(f"{'='*60}\n")
 
 # ------------------------------------------------------------ TOOLS ------------------------------------------------------------
 def create_tools():
@@ -203,6 +309,8 @@ def create_agents():
             to find all characters and categorize them.
             Your goal is to identify 'main_characters' and 'side_characters'.
             Use the available tools to find the necessary information from the book.
+
+            You must ONLY use information available gotten from the retriever tool. NOWHERE ELSE.
             """,
             response_format=CharacterList
         )
@@ -239,6 +347,9 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
             name=book_name or "Sample Book",
             icon=book_icon
         )
+        
+        # Re-initialize RAG system for this specific document
+        reinitialize_rag_for_document(book_url)
         
         # Check if agents are ready
         if not LISTER_AGENT or not PROFILE_AGENT:
@@ -349,10 +460,126 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
             "error": error_msg
         }
 
+def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict:
+    """
+    Update character profiles for existing characters when document changes.
+    
+    Args:
+        book_url: The Google Doc ID/URL for the book
+        changed_chunks: List of text chunks that changed (for filtering relevant characters)
+        
+    Returns:
+        dict: Summary of updates made
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"Updating existing profiles for book: {book_url}")
+        print(f"{'='*60}\n")
+        
+        # Check if agents are ready
+        if not PROFILE_AGENT:
+            return {
+                "success": False,
+                "error": "Profile agent not initialized"
+            }
+        
+        # Get existing characters from database
+        existing_characters = database.get_characters_by_book(book_url)
+        
+        if not existing_characters:
+            print("No existing characters to update.")
+            return {
+                "success": True,
+                "characters_updated": [],
+                "message": "No existing characters to update"
+            }
+        
+        print(f"Found {len(existing_characters)} existing characters in database.")
+        
+        # Filter characters based on changed chunks
+        if changed_chunks:
+            # Combine all changed text
+            changed_text = " ".join(changed_chunks).lower()
+            
+            # Only update characters mentioned in changed chunks
+            characters_to_update = [
+                char for char in existing_characters
+                if char['name'].lower() in changed_text
+            ]
+            
+            print(f"📝 Filtered to {len(characters_to_update)} characters mentioned in changed chunks:")
+            for char in characters_to_update:
+                print(f"   - {char['name']}")
+        else:
+            # No chunk info, update all (fallback)
+            characters_to_update = existing_characters
+            print(f"⚠️  No changed chunk info - updating all {len(characters_to_update)} characters")
+        
+        updated_characters = []
+        failed_updates = []
+        
+        # Update each filtered character
+        for char_data in characters_to_update:
+            char_name = char_data['name']
+            char_type = char_data['character_type']
+            
+            print(f"Updating profile for {char_name}...")
+            
+            try:
+                profile_response = PROFILE_AGENT.invoke({
+                    "messages": [{
+                        "role": "user",
+                        "content": f"Create a detailed character profile for the character {char_name}. Use your retriever tool to find information from the book. If information is not available, use None or empty values."
+                    }]
+                })
+                
+                character_profile = profile_response.get('structured_response')
+                
+                if isinstance(character_profile, CharacterProfile):
+                    # Update character in database
+                    database.add_or_update_character(
+                        profile=character_profile,
+                        book_url=book_url,
+                        character_type=char_type
+                    )
+                    updated_characters.append(char_name)
+                    print(f"✓ Updated {char_name}")
+                else:
+                    print(f"✗ Failed to get valid profile for {char_name}")
+                    failed_updates.append(char_name)
+                
+                # Rate limiting
+                time.sleep(3)
+                
+            except Exception as e:
+                print(f"Error updating profile for {char_name}: {e}")
+                failed_updates.append(char_name)
+        
+        print(f"\n{'='*60}")
+        print(f"Profile updates complete!")
+        print(f"Updated: {len(updated_characters)} | Failed: {len(failed_updates)}")
+        print(f"{'='*60}\n")
+        
+        return {
+            "success": True,
+            "characters_updated": updated_characters,
+            "characters_failed": failed_updates,
+            "message": f"Updated {len(updated_characters)} characters"
+        }
+        
+    except Exception as e:
+        error_msg = f"Error updating profiles: {str(e)}"
+        print(f"\n❌ {error_msg}\n")
+        return {
+            "success": False,
+            "error": error_msg,
+            "characters_updated": []
+        }
+
 # Main loop.
 if __name__ == "__main__":
     # Startup
-    initialise_rag_system()
+    initialise_rag_system(DOC_ID)
     # Separate monitoring thread in the background.
     begin_change_monitoring()
 
@@ -377,4 +604,5 @@ if __name__ == "__main__":
             
     except KeyboardInterrupt:
         print("\nExiting...")
+        stop_change_monitoring()
         exit(0)
