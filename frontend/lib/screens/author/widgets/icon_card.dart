@@ -48,7 +48,11 @@ class IconCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      FaIcon(item.icon, size: 80.0, color: lightColor),
+                      FaIcon(
+                        FontAwesomeIcons.book,
+                        size: 80.0,
+                        color: lightColor,
+                      ),
                       const SizedBox(height: 12.0),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8.0),
