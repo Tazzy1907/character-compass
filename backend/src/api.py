@@ -671,15 +671,15 @@ async def check_document_changes(book_url: str):
             if update_result["success"]:
                 characters_updated = update_result.get("characters_updated", [])
                 print(f"✅ Successfully updated {len(characters_updated)} characters")
-            
-            # Clean up characters no longer in the document
-            full_document_text = change_result.get("full_document_text", "")
-            if full_document_text:
-                from main import cleanup_removed_characters
-                cleanup_result = cleanup_removed_characters(book_url, full_document_text)
-                if cleanup_result["success"]:
-                    characters_removed = cleanup_result.get("characters_removed", [])
-                    print(f"🧹 Removed {len(characters_removed)} characters no longer in document")
+        
+        # Clean up characters no longer in the document (always run)
+        full_document_text = change_result.get("full_document_text", "")
+        if full_document_text:
+            from main import cleanup_removed_characters
+            cleanup_result = cleanup_removed_characters(book_url, full_document_text)
+            if cleanup_result["success"]:
+                characters_removed = cleanup_result.get("characters_removed", [])
+                print(f"🧹 Removed {len(characters_removed)} characters no longer in document")
         
         return DocumentChangeResponse(
             changed=change_result["changed"],

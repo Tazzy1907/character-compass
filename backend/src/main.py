@@ -320,6 +320,11 @@ def generate_profiles_for_book(book_url: str, book_name: str = None, book_icon: 
             icon=book_icon
         )
         
+        # Delete all existing characters for this book to start fresh
+        print(f"Clearing existing characters for {book_url}...")
+        database.delete_characters_by_book(book_url)
+        print(f"✓ Existing characters cleared")
+        
         # Re-initialize RAG system for this specific document
         reinitialize_rag_for_document(book_url)
         
@@ -562,9 +567,9 @@ def update_existing_profiles(book_url: str, changed_chunks: list = None) -> dict
                 print(f"⚠️  Falling back to updating ALL characters to ensure database stays current")
                 characters_to_update = existing_characters
         else:
-            # No chunk info, update all (fallback)
+            # No new chunks added (only deletions or no changes) - skip profile updates
             characters_to_update = []
-            print(f"⚠️  No changed chunk info - updating all {len(characters_to_update)} characters")
+            print(f"ℹ️  No new chunks added - skipping profile updates (cleanup handles deletions)")
         
         updated_characters = []
         failed_updates = []
