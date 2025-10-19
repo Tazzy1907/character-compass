@@ -21,6 +21,7 @@ class HomeScreen extends StatelessWidget {
             MaterialPageRoute(builder: (context) => const AuthorScreen()),
           );
         },
+        behavior: HitTestBehavior.opaque,
         child: Center(
           // Center the image on the screen
           child: Image.asset(
